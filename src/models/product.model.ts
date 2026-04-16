@@ -141,9 +141,14 @@ const updateProduct = async (id: string, data: UpdateProductRecordData): Promise
 };
 
 const deleteProduct = async (id: string): Promise<ProductRecord> => {
-  return prisma.product.delete({
-    where: { id },
-    select: publicProductSelect,
+  return prisma.$transaction(async (tx) => {
+    await tx.inventoryMovement.deleteMany({ where: { productId: id } });
+    await tx.purchaseOrder.deleteMany({ where: { productId: id } });
+
+    return tx.product.delete({
+      where: { id },
+      select: publicProductSelect,
+    });
   });
 };
 

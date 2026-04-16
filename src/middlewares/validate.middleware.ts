@@ -22,7 +22,13 @@ export const validateRequest = <T extends RequestSchema>(schema: T): RequestHand
 
     request.body = parsedRequest.data.body ?? request.body;
     request.params = (parsedRequest.data.params ?? request.params) as Request["params"];
-    request.query = (parsedRequest.data.query ?? request.query) as Request["query"];
+
+    Object.defineProperty(request, "query", {
+      value: (parsedRequest.data.query ?? request.query) as Request["query"],
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
 
     next();
   };

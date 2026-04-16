@@ -37,6 +37,8 @@ export const errorMiddleware: ErrorRequestHandler = (error, _request, response, 
     return;
   }
 
+  console.error("[errorMiddleware] Unhandled error:", error);
+
   response.status(500).json({
     success: false,
     message: "Internal server error",

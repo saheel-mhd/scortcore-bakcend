@@ -12,6 +12,8 @@ const allowedOrigins = env.CORS_ORIGIN.split(",")
   .map((origin) => origin.trim())
   .filter((origin) => origin.length > 0);
 
+console.log("[cors] allowed origins:", allowedOrigins);
+
 app.disable("x-powered-by");
 app.use(helmet());
 app.use(
