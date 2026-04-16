@@ -38,7 +38,39 @@ const priceSchema = z
   .min(0, "Price cannot be negative")
   .multipleOf(0.01, "Price can have at most two decimal places");
 
+const imageUrlSchema = z
+  .string()
+  .trim()
+  .url("Must be a valid URL")
+  .max(2048, "Image URL must not exceed 2048 characters");
+
+const galleryImagesSchema = z
+  .array(imageUrlSchema)
+  .max(20, "Gallery cannot contain more than 20 images");
+
 const stockSchema = z.coerce.number().int().min(0, "Stock cannot be negative");
+
+const createVariantSchema = z.object({
+  unitId: objectIdSchema,
+  stock: stockSchema.default(0),
+});
+
+const updateVariantSchema = z.object({
+  id: objectIdSchema.optional(),
+  unitId: objectIdSchema,
+  stock: stockSchema.optional(),
+});
+
+const createVariantsSchema = z
+  .array(createVariantSchema)
+  .min(1, "At least one size variant is required")
+  .max(50, "Cannot create more than 50 variants at once");
+
+const updateVariantsSchema = z
+  .array(updateVariantSchema)
+  .min(1, "At least one size variant is required")
+  .max(50, "Cannot have more than 50 variants")
+  .optional();
 
 export const createProductValidationSchema = z.object({
   body: z.object({
@@ -47,8 +79,11 @@ export const createProductValidationSchema = z.object({
     sku: skuSchema,
     description: descriptionSchema,
     price: priceSchema,
-    stock: stockSchema.default(0),
     isActive: z.coerce.boolean().default(true),
+    cardImage: imageUrlSchema,
+    mainImage: imageUrlSchema,
+    galleryImages: galleryImagesSchema.default([]),
+    variants: createVariantsSchema,
   }),
 });
 
@@ -63,8 +98,11 @@ export const updateProductValidationSchema = z.object({
       sku: skuSchema.optional(),
       description: descriptionSchema.nullable().optional(),
       price: priceSchema.optional(),
-      stock: stockSchema.optional(),
       isActive: z.coerce.boolean().optional(),
+      cardImage: imageUrlSchema.optional(),
+      mainImage: imageUrlSchema.optional(),
+      galleryImages: galleryImagesSchema.optional(),
+      variants: updateVariantsSchema,
     })
     .refine((value) => Object.keys(value).length > 0, {
       message: "At least one field is required to update the product",
@@ -93,7 +131,7 @@ export const listProductsValidationSchema = z.object({
       minPrice: priceSchema.optional(),
       maxPrice: priceSchema.optional(),
       sortBy: z
-        .enum(["name", "price", "stock", "createdAt", "updatedAt"])
+        .enum(["name", "price", "createdAt", "updatedAt"])
         .default("createdAt"),
       sortOrder: z.enum(["asc", "desc"]).default("desc"),
     })
@@ -108,18 +146,7 @@ export const listProductsValidationSchema = z.object({
     ),
 });
 
-export const updateProductStockValidationSchema = z.object({
-  params: z.object({
-    id: objectIdSchema,
-  }),
-  body: z.object({
-    operation: z.enum(["set", "increase", "decrease"]),
-    quantity: z.coerce.number().int().min(0, "Stock quantity cannot be negative"),
-  }),
-});
-
 export type CreateProductInput = z.infer<typeof createProductValidationSchema>["body"];
 export type UpdateProductInput = z.infer<typeof updateProductValidationSchema>["body"];
 export type ProductIdParams = z.infer<typeof getProductValidationSchema>["params"];
 export type ListProductsQuery = z.infer<typeof listProductsValidationSchema>["query"];
-export type UpdateProductStockInput = z.infer<typeof updateProductStockValidationSchema>["body"];

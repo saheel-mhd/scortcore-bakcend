@@ -9,7 +9,6 @@ import {
   deleteProductValidationSchema,
   getProductValidationSchema,
   listProductsValidationSchema,
-  updateProductStockValidationSchema,
   updateProductValidationSchema,
 } from "../validations/product.validation.js";
 
@@ -31,13 +30,6 @@ productRouter.put(
   authorize(Role.admin, Role.staff),
   validateRequest(updateProductValidationSchema),
   productController.updateProduct,
-);
-productRouter.put(
-  "/:id/stock",
-  authenticate,
-  authorize(Role.admin, Role.staff),
-  validateRequest(updateProductStockValidationSchema),
-  productController.updateProductStock,
 );
 productRouter.delete(
   "/:id",

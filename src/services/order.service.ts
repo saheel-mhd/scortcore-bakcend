@@ -1,7 +1,8 @@
 import type { Prisma, Role } from "@prisma/client";
 import { OrderStatus } from "@prisma/client";
+
+import { prisma } from "../config/prisma.js";
 import { orderModel } from "../models/order.model.js";
-import { productModel } from "../models/product.model.js";
 import { AppError } from "../utils/app-error.js";
 import type {
   CreateOrderInput,
@@ -11,10 +12,16 @@ import type {
 } from "../validations/order.validation.js";
 
 interface OrderItemSnapshot {
+  productVariantId: string;
   productId: string;
   name: string;
   slug: string;
   sku: string;
+  unitId: string;
+  unitName: string;
+  unitShortName: string;
+  unitCategoryId: string;
+  unitCategoryName: string;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
@@ -63,50 +70,65 @@ const createOrder = async (
 
   const aggregatedItems = Array.from(
     input.items.reduce((map, item) => {
-      const currentQuantity = map.get(item.productId) ?? 0;
-      map.set(item.productId, currentQuantity + item.quantity);
+      const currentQuantity = map.get(item.productVariantId) ?? 0;
+      map.set(item.productVariantId, currentQuantity + item.quantity);
       return map;
     }, new Map<string, number>()),
-  ).map(([productId, quantity]) => ({
-    productId,
+  ).map(([productVariantId, quantity]) => ({
+    productVariantId,
     quantity,
   }));
 
-  const uniqueProductIds = aggregatedItems.map((item) => item.productId);
-  const products = await Promise.all(uniqueProductIds.map((productId) => productModel.findProductById(productId)));
-  const productMap = new Map(
-    products
-      .filter((product): product is NonNullable<typeof product> => Boolean(product))
-      .map((product) => [product.id, product]),
-  );
+  const variantIds = aggregatedItems.map((item) => item.productVariantId);
+  const variants = await prisma.productVariant.findMany({
+    where: { id: { in: variantIds } },
+    include: {
+      product: true,
+      unit: { include: { category: true } },
+    },
+  });
 
-  if (productMap.size !== uniqueProductIds.length) {
-    throw new AppError("One or more products were not found", 404);
+  if (variants.length !== variantIds.length) {
+    throw new AppError("One or more product variants were not found", 404);
   }
 
+  const variantMap = new Map(variants.map((variant) => [variant.id, variant]));
+
   const orderItems: OrderItemSnapshot[] = aggregatedItems.map((item) => {
-    const product = productMap.get(item.productId);
+    const variant = variantMap.get(item.productVariantId);
 
-    if (!product) {
-      throw new AppError("One or more products were not found", 404);
+    if (!variant) {
+      throw new AppError("One or more product variants were not found", 404);
     }
 
-    if (!product.isActive) {
-      throw new AppError(`Product ${product.name} is inactive and cannot be ordered`, 400);
+    if (!variant.product.isActive) {
+      throw new AppError(
+        `Product ${variant.product.name} is inactive and cannot be ordered`,
+        400,
+      );
     }
 
-    if (product.stock < item.quantity) {
-      throw new AppError(`Insufficient stock for product ${product.name}`, 400);
+    if (variant.stock < item.quantity) {
+      throw new AppError(
+        `Insufficient stock for ${variant.product.name} (${variant.unit.shortName})`,
+        400,
+      );
     }
 
     return {
-      productId: product.id,
-      name: product.name,
-      slug: product.slug,
-      sku: product.sku,
+      productVariantId: variant.id,
+      productId: variant.product.id,
+      name: variant.product.name,
+      slug: variant.product.slug,
+      sku: variant.product.sku,
+      unitId: variant.unit.id,
+      unitName: variant.unit.name,
+      unitShortName: variant.unit.shortName,
+      unitCategoryId: variant.unit.category.id,
+      unitCategoryName: variant.unit.category.name,
       quantity: item.quantity,
-      unitPrice: product.price,
-      lineTotal: Number((product.price * item.quantity).toFixed(2)),
+      unitPrice: variant.product.price,
+      lineTotal: Number((variant.product.price * item.quantity).toFixed(2)),
     };
   });
 

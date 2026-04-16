@@ -29,7 +29,7 @@ export const createPurchaseOrderValidationSchema = z.object({
       .min(3, "Supplier phone must be at least 3 characters long")
       .max(50, "Supplier phone must not exceed 50 characters")
       .optional(),
-    productId: objectIdSchema,
+    productVariantId: objectIdSchema,
     quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
     unitCost: moneySchema,
     notes: z.string().trim().min(1).max(500).optional(),
@@ -42,7 +42,7 @@ export const listPurchaseOrdersValidationSchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).default(10),
     search: z.string().trim().min(1).max(100).optional(),
     status: z.nativeEnum(PurchaseOrderStatus).optional(),
-    productId: objectIdSchema.optional(),
+    productVariantId: objectIdSchema.optional(),
     sortBy: z
       .enum(["orderedAt", "createdAt", "updatedAt", "status", "supplierName"])
       .default("orderedAt"),

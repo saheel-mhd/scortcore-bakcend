@@ -2,6 +2,28 @@ import type { Prisma } from "@prisma/client";
 
 import { prisma } from "../config/prisma.js";
 
+const variantSelect = {
+  id: true,
+  unitId: true,
+  stock: true,
+  createdAt: true,
+  updatedAt: true,
+  unit: {
+    select: {
+      id: true,
+      name: true,
+      shortName: true,
+      category: {
+        select: {
+          id: true,
+          name: true,
+          shortName: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.ProductVariantSelect;
+
 const publicProductSelect = {
   id: true,
   name: true,
@@ -9,15 +31,27 @@ const publicProductSelect = {
   sku: true,
   description: true,
   price: true,
-  stock: true,
   isActive: true,
+  cardImage: true,
+  mainImage: true,
+  galleryImages: true,
   createdAt: true,
   updatedAt: true,
+  variants: {
+    select: variantSelect,
+    orderBy: { createdAt: "asc" },
+  },
 } satisfies Prisma.ProductSelect;
 
 export type ProductRecord = Prisma.ProductGetPayload<{
   select: typeof publicProductSelect;
 }>;
+
+export interface VariantInputData {
+  id?: string;
+  unitId: string;
+  stock?: number;
+}
 
 export interface CreateProductRecordData {
   name: string;
@@ -25,8 +59,11 @@ export interface CreateProductRecordData {
   sku: string;
   description?: string;
   price: number;
-  stock: number;
   isActive: boolean;
+  cardImage: string;
+  mainImage: string;
+  galleryImages: string[];
+  variants: { unitId: string; stock: number }[];
 }
 
 export interface UpdateProductRecordData {
@@ -35,8 +72,10 @@ export interface UpdateProductRecordData {
   sku?: string;
   description?: string | null;
   price?: number;
-  stock?: number;
   isActive?: boolean;
+  cardImage?: string;
+  mainImage?: string;
+  galleryImages?: string[];
 }
 
 export interface ListProductsOptions {
@@ -58,32 +97,15 @@ const buildProductWhereInput = (
   if (options.search) {
     andConditions.push({
       OR: [
-        {
-          name: {
-            contains: options.search,
-            mode: "insensitive",
-          },
-        },
-        {
-          slug: {
-            contains: options.search,
-            mode: "insensitive",
-          },
-        },
-        {
-          sku: {
-            contains: options.search,
-            mode: "insensitive",
-          },
-        },
+        { name: { contains: options.search, mode: "insensitive" } },
+        { slug: { contains: options.search, mode: "insensitive" } },
+        { sku: { contains: options.search, mode: "insensitive" } },
       ],
     });
   }
 
   if (typeof options.isActive === "boolean") {
-    andConditions.push({
-      isActive: options.isActive,
-    });
+    andConditions.push({ isActive: options.isActive });
   }
 
   if (typeof options.minPrice === "number" || typeof options.maxPrice === "number") {
@@ -95,13 +117,8 @@ const buildProductWhereInput = (
     });
   }
 
-  if (andConditions.length === 0) {
-    return {};
-  }
-
-  return {
-    AND: andConditions,
-  };
+  if (andConditions.length === 0) return {};
+  return { AND: andConditions };
 };
 
 const findProductById = async (id: string): Promise<ProductRecord | null> => {
@@ -126,9 +143,23 @@ const findProductBySku = async (sku: string): Promise<ProductRecord | null> => {
 };
 
 const createProduct = async (data: CreateProductRecordData): Promise<ProductRecord> => {
-  return prisma.product.create({
-    data,
-    select: publicProductSelect,
+  const { variants, ...productData } = data;
+
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.product.create({
+      data: {
+        ...productData,
+        variants: {
+          create: variants.map((variant) => ({
+            unitId: variant.unitId,
+            stock: variant.stock,
+          })),
+        },
+      },
+      select: publicProductSelect,
+    });
+
+    return created;
   });
 };
 
@@ -140,10 +171,78 @@ const updateProduct = async (id: string, data: UpdateProductRecordData): Promise
   });
 };
 
+const replaceVariants = async (
+  productId: string,
+  variants: { id?: string; unitId: string; stock: number }[],
+): Promise<ProductRecord> => {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.productVariant.findMany({
+      where: { productId },
+      select: { id: true },
+    });
+    const existingIds = new Set(existing.map((v) => v.id));
+    const keptIds = new Set(
+      variants.map((v) => v.id).filter((id): id is string => typeof id === "string"),
+    );
+    const toDelete = existing.filter((v) => !keptIds.has(v.id)).map((v) => v.id);
+
+    if (toDelete.length > 0) {
+      await tx.inventoryMovement.deleteMany({
+        where: { productVariantId: { in: toDelete } },
+      });
+      await tx.purchaseOrder.deleteMany({
+        where: { productVariantId: { in: toDelete } },
+      });
+      await tx.productVariant.deleteMany({
+        where: { id: { in: toDelete } },
+      });
+    }
+
+    for (const variant of variants) {
+      if (variant.id && existingIds.has(variant.id)) {
+        await tx.productVariant.update({
+          where: { id: variant.id },
+          data: { unitId: variant.unitId, stock: variant.stock },
+        });
+      } else {
+        await tx.productVariant.create({
+          data: { productId, unitId: variant.unitId, stock: variant.stock },
+        });
+      }
+    }
+
+    const product = await tx.product.findUnique({
+      where: { id: productId },
+      select: publicProductSelect,
+    });
+
+    if (!product) {
+      throw new Error("Product not found after variant replacement");
+    }
+
+    return product;
+  });
+};
+
 const deleteProduct = async (id: string): Promise<ProductRecord> => {
   return prisma.$transaction(async (tx) => {
-    await tx.inventoryMovement.deleteMany({ where: { productId: id } });
-    await tx.purchaseOrder.deleteMany({ where: { productId: id } });
+    const variants = await tx.productVariant.findMany({
+      where: { productId: id },
+      select: { id: true },
+    });
+    const variantIds = variants.map((v) => v.id);
+
+    if (variantIds.length > 0) {
+      await tx.inventoryMovement.deleteMany({
+        where: { productVariantId: { in: variantIds } },
+      });
+      await tx.purchaseOrder.deleteMany({
+        where: { productVariantId: { in: variantIds } },
+      });
+      await tx.productVariant.deleteMany({
+        where: { productId: id },
+      });
+    }
 
     return tx.product.delete({
       where: { id },
@@ -160,18 +259,13 @@ const listProducts = async (options: ListProductsOptions) => {
       where,
       skip: options.skip,
       take: options.take,
-      orderBy: {
-        [options.sortBy]: options.sortOrder,
-      },
+      orderBy: { [options.sortBy]: options.sortOrder },
       select: publicProductSelect,
     }),
     prisma.product.count({ where }),
   ]);
 
-  return {
-    products,
-    total,
-  };
+  return { products, total };
 };
 
 export const productModel = {
@@ -180,6 +274,7 @@ export const productModel = {
   findProductBySku,
   createProduct,
   updateProduct,
+  replaceVariants,
   deleteProduct,
   listProducts,
 };

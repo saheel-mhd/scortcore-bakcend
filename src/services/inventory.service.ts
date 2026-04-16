@@ -1,10 +1,10 @@
-import { InventoryMovementType, type Prisma } from "@prisma/client";
+import { InventoryMovementType } from "@prisma/client";
 
 import { inventoryModel } from "../models/inventory.model.js";
 import { AppError } from "../utils/app-error.js";
 import type {
   AdjustInventoryInput,
-  InventoryProductIdParams,
+  InventoryVariantIdParams,
   ListInventoryMovementsQuery,
   ListInventoryQuery,
   ListLowStockQuery,
@@ -29,65 +29,45 @@ const buildPagination = (page: number, limit: number, total: number) => {
   };
 };
 
-const listInventory = async (query: ListInventoryQuery): Promise<InventoryListResult<{
-  id: string;
-  name: string;
-  slug: string;
-  sku: string;
-  stock: number;
-  isActive: boolean;
-  isLowStock: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}>> => {
+const listInventory = async (query: ListInventoryQuery) => {
   const page = query.page;
   const limit = query.limit;
   const skip = (page - 1) * limit;
 
-  const result = await inventoryModel.listInventoryProducts({
+  const result = await inventoryModel.listInventoryVariants({
     skip,
     take: limit,
     search: query.search,
-    sortBy: query.sortBy as Prisma.ProductScalarFieldEnum,
+    sortBy: query.sortBy,
     sortOrder: query.sortOrder,
   });
 
   return {
-    items: result.products.map((product) => ({
-      ...product,
-      isLowStock: product.stock <= query.threshold,
+    items: result.variants.map((variant) => ({
+      ...variant,
+      isLowStock: variant.stock <= query.threshold,
     })),
     pagination: buildPagination(page, limit, result.total),
   };
 };
 
-const listLowStock = async (query: ListLowStockQuery): Promise<InventoryListResult<{
-  id: string;
-  name: string;
-  slug: string;
-  sku: string;
-  stock: number;
-  isActive: boolean;
-  threshold: number;
-  createdAt: Date;
-  updatedAt: Date;
-}>> => {
+const listLowStock = async (query: ListLowStockQuery) => {
   const page = query.page;
   const limit = query.limit;
   const skip = (page - 1) * limit;
 
-  const result = await inventoryModel.listLowStockProducts({
+  const result = await inventoryModel.listLowStockVariants({
     skip,
     take: limit,
     search: query.search,
     threshold: query.threshold,
-    sortBy: query.sortBy as Prisma.ProductScalarFieldEnum,
+    sortBy: query.sortBy,
     sortOrder: query.sortOrder,
   });
 
   return {
-    items: result.products.map((product) => ({
-      ...product,
+    items: result.variants.map((variant) => ({
+      ...variant,
       threshold: query.threshold,
     })),
     pagination: buildPagination(page, limit, result.total),
@@ -95,13 +75,13 @@ const listLowStock = async (query: ListLowStockQuery): Promise<InventoryListResu
 };
 
 const listInventoryMovements = async (
-  params: InventoryProductIdParams,
+  params: InventoryVariantIdParams,
   query: ListInventoryMovementsQuery,
 ): Promise<InventoryListResult<Awaited<ReturnType<typeof inventoryModel.listInventoryMovements>>["movements"][number]>> => {
-  const existingProduct = await inventoryModel.findInventoryProductById(params.productId);
+  const existing = await inventoryModel.findInventoryVariantById(params.productVariantId);
 
-  if (!existingProduct) {
-    throw new AppError("Product not found", 404);
+  if (!existing) {
+    throw new AppError("Product variant not found", 404);
   }
 
   const page = query.page;
@@ -109,7 +89,7 @@ const listInventoryMovements = async (
   const skip = (page - 1) * limit;
 
   const result = await inventoryModel.listInventoryMovements({
-    productId: params.productId,
+    productVariantId: params.productVariantId,
     skip,
     take: limit,
     sortOrder: query.sortOrder,
@@ -122,16 +102,16 @@ const listInventoryMovements = async (
 };
 
 const adjustInventoryStock = async (
-  params: InventoryProductIdParams,
+  params: InventoryVariantIdParams,
   input: AdjustInventoryInput,
 ) => {
-  const existingProduct = await inventoryModel.findInventoryProductById(params.productId);
+  const existing = await inventoryModel.findInventoryVariantById(params.productVariantId);
 
-  if (!existingProduct) {
-    throw new AppError("Product not found", 404);
+  if (!existing) {
+    throw new AppError("Product variant not found", 404);
   }
 
-  let nextStock = existingProduct.stock;
+  let nextStock = existing.stock;
   let movementType: InventoryMovementType = InventoryMovementType.set;
 
   if (input.operation === "set") {
@@ -140,12 +120,12 @@ const adjustInventoryStock = async (
   }
 
   if (input.operation === "increase") {
-    nextStock = existingProduct.stock + input.quantity;
+    nextStock = existing.stock + input.quantity;
     movementType = InventoryMovementType.increase;
   }
 
   if (input.operation === "decrease") {
-    nextStock = existingProduct.stock - input.quantity;
+    nextStock = existing.stock - input.quantity;
     movementType = InventoryMovementType.decrease;
   }
 
@@ -154,7 +134,7 @@ const adjustInventoryStock = async (
   }
 
   return inventoryModel.adjustInventoryStock({
-    productId: params.productId,
+    productVariantId: params.productVariantId,
     nextStock,
     type: movementType,
     reason: input.reason,

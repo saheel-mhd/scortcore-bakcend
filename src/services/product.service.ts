@@ -1,5 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { InventoryMovementType } from "@prisma/client";
+
+import { prisma } from "../config/prisma.js";
 import { inventoryModel } from "../models/inventory.model.js";
 import { productModel } from "../models/product.model.js";
 import { AppError } from "../utils/app-error.js";
@@ -7,7 +9,6 @@ import type {
   CreateProductInput,
   ListProductsQuery,
   UpdateProductInput,
-  UpdateProductStockInput,
 } from "../validations/product.validation.js";
 
 interface ListProductsResult {
@@ -45,6 +46,25 @@ const ensureUniqueProductFields = async (
 
   if (productWithSameSku && productWithSameSku.id !== currentProductId) {
     throw new AppError("Product with this SKU already exists", 409);
+  }
+};
+
+const ensureVariantsValid = async (
+  variants: { unitId: string }[],
+): Promise<void> => {
+  const unitIds = variants.map((v) => v.unitId);
+  const uniqueIds = new Set(unitIds);
+  if (uniqueIds.size !== unitIds.length) {
+    throw new AppError("Each size can only appear once per product", 400);
+  }
+
+  const existing = await prisma.unit.findMany({
+    where: { id: { in: unitIds } },
+    select: { id: true },
+  });
+
+  if (existing.length !== uniqueIds.size) {
+    throw new AppError("One or more selected units do not exist", 400);
   }
 };
 
@@ -95,6 +115,7 @@ const createProduct = async (input: CreateProductInput) => {
   }
 
   await ensureUniqueProductFields(slug, input.sku);
+  await ensureVariantsValid(input.variants);
 
   const product = await productModel.createProduct({
     name: input.name,
@@ -102,21 +123,26 @@ const createProduct = async (input: CreateProductInput) => {
     sku: input.sku,
     description: input.description,
     price: input.price,
-    stock: input.stock,
     isActive: input.isActive,
+    cardImage: input.cardImage,
+    mainImage: input.mainImage,
+    galleryImages: input.galleryImages,
+    variants: input.variants.map((v) => ({ unitId: v.unitId, stock: v.stock ?? 0 })),
   });
 
-  if (product.stock > 0) {
-    await inventoryModel.createInventoryMovement({
-      productId: product.id,
-      type: InventoryMovementType.set,
-      quantityChange: product.stock,
-      previousStock: 0,
-      nextStock: product.stock,
-      reason: "Initial stock recorded during product creation",
-      referenceType: "product",
-      referenceId: product.id,
-    });
+  for (const variant of product.variants) {
+    if (variant.stock > 0) {
+      await inventoryModel.createInventoryMovement({
+        productVariantId: variant.id,
+        type: InventoryMovementType.set,
+        quantityChange: variant.stock,
+        previousStock: 0,
+        nextStock: variant.stock,
+        reason: "Initial stock recorded during product creation",
+        referenceType: "product",
+        referenceId: product.id,
+      });
+    }
   }
 
   return product;
@@ -138,66 +164,50 @@ const updateProduct = async (id: string, input: UpdateProductInput) => {
 
   await ensureUniqueProductFields(nextSlug, nextSku, id);
 
-  const updatedProduct = await productModel.updateProduct(id, {
+  await productModel.updateProduct(id, {
     name: input.name,
     slug: nextSlug,
     sku: input.sku,
     description: input.description,
     price: input.price,
     isActive: input.isActive,
+    cardImage: input.cardImage,
+    mainImage: input.mainImage,
+    galleryImages: input.galleryImages,
   });
 
-  if (typeof input.stock === "number" && input.stock !== existingProduct.stock) {
-    return inventoryModel.adjustInventoryStock({
-      productId: id,
-      nextStock: input.stock,
-      type: InventoryMovementType.set,
-      reason: "Stock updated via product module",
-      referenceType: "product",
-      referenceId: id,
-    });
+  if (input.variants) {
+    await ensureVariantsValid(input.variants);
+    const prevStockById = new Map(existingProduct.variants.map((v) => [v.id, v.stock]));
+    const updated = await productModel.replaceVariants(
+      id,
+      input.variants.map((v) => ({ id: v.id, unitId: v.unitId, stock: v.stock ?? 0 })),
+    );
+
+    for (const variant of updated.variants) {
+      const prev = prevStockById.get(variant.id) ?? 0;
+      if (variant.stock !== prev) {
+        await inventoryModel.createInventoryMovement({
+          productVariantId: variant.id,
+          type: InventoryMovementType.set,
+          quantityChange: variant.stock - prev,
+          previousStock: prev,
+          nextStock: variant.stock,
+          reason: "Stock updated via product module",
+          referenceType: "product",
+          referenceId: id,
+        });
+      }
+    }
+
+    return updated;
   }
 
-  return updatedProduct;
-};
-
-const updateProductStock = async (id: string, input: UpdateProductStockInput) => {
-  const existingProduct = await productModel.findProductById(id);
-
-  if (!existingProduct) {
-    throw new AppError("Product not found", 404);
+  const refreshed = await productModel.findProductById(id);
+  if (!refreshed) {
+    throw new AppError("Product not found after update", 404);
   }
-
-  let nextStock = existingProduct.stock;
-  let movementType: InventoryMovementType = InventoryMovementType.set;
-
-  if (input.operation === "set") {
-    nextStock = input.quantity;
-    movementType = InventoryMovementType.set;
-  }
-
-  if (input.operation === "increase") {
-    nextStock = existingProduct.stock + input.quantity;
-    movementType = InventoryMovementType.increase;
-  }
-
-  if (input.operation === "decrease") {
-    nextStock = existingProduct.stock - input.quantity;
-    movementType = InventoryMovementType.decrease;
-  }
-
-  if (nextStock < 0) {
-    throw new AppError("Stock cannot go below zero", 400);
-  }
-
-  return inventoryModel.adjustInventoryStock({
-    productId: id,
-    nextStock,
-    type: movementType,
-    reason: "Stock updated via product stock endpoint",
-    referenceType: "product",
-    referenceId: id,
-  });
+  return refreshed;
 };
 
 const deleteProduct = async (id: string) => {
@@ -215,6 +225,5 @@ export const productService = {
   listProducts,
   createProduct,
   updateProduct,
-  updateProductStock,
   deleteProduct,
 };

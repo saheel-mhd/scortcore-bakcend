@@ -2,29 +2,61 @@ import type { InventoryMovementType, Prisma } from "@prisma/client";
 
 import { prisma } from "../config/prisma.js";
 
-const inventoryProductSelect = {
+const inventoryVariantSelect = {
   id: true,
-  name: true,
-  slug: true,
-  sku: true,
   stock: true,
-  isActive: true,
   updatedAt: true,
   createdAt: true,
-} satisfies Prisma.ProductSelect;
+  product: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      sku: true,
+      isActive: true,
+    },
+  },
+  unit: {
+    select: {
+      id: true,
+      name: true,
+      shortName: true,
+      category: {
+        select: {
+          id: true,
+          name: true,
+          shortName: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.ProductVariantSelect;
 
-const inventoryMovementProductSelect = {
+const inventoryMovementVariantSelect = {
   id: true,
-  name: true,
-  sku: true,
-  slug: true,
-} satisfies Prisma.ProductSelect;
+  stock: true,
+  product: {
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      slug: true,
+    },
+  },
+  unit: {
+    select: {
+      id: true,
+      name: true,
+      shortName: true,
+    },
+  },
+} satisfies Prisma.ProductVariantSelect;
 
 const inventoryMovementSelect = {
   id: true,
-  productId: true,
-  product: {
-    select: inventoryMovementProductSelect,
+  productVariantId: true,
+  productVariant: {
+    select: inventoryMovementVariantSelect,
   },
   type: true,
   quantityChange: true,
@@ -36,8 +68,8 @@ const inventoryMovementSelect = {
   createdAt: true,
 } satisfies Prisma.InventoryMovementSelect;
 
-export type InventoryProductRecord = Prisma.ProductGetPayload<{
-  select: typeof inventoryProductSelect;
+export type InventoryVariantRecord = Prisma.ProductVariantGetPayload<{
+  select: typeof inventoryVariantSelect;
 }>;
 
 export type InventoryMovementRecord = Prisma.InventoryMovementGetPayload<{
@@ -48,7 +80,7 @@ export interface ListInventoryOptions {
   skip: number;
   take: number;
   search?: string;
-  sortBy: Prisma.ProductScalarFieldEnum;
+  sortBy: "stock" | "createdAt" | "updatedAt";
   sortOrder: Prisma.SortOrder;
 }
 
@@ -57,14 +89,14 @@ export interface ListLowStockOptions extends ListInventoryOptions {
 }
 
 export interface ListInventoryMovementsOptions {
-  productId: string;
+  productVariantId: string;
   skip: number;
   take: number;
   sortOrder: Prisma.SortOrder;
 }
 
 export interface CreateInventoryMovementData {
-  productId: string;
+  productVariantId: string;
   type: InventoryMovementType;
   quantityChange: number;
   previousStock: number;
@@ -75,7 +107,7 @@ export interface CreateInventoryMovementData {
 }
 
 export interface AdjustInventoryStockData {
-  productId: string;
+  productVariantId: string;
   nextStock: number;
   type: InventoryMovementType;
   reason?: string;
@@ -83,102 +115,73 @@ export interface AdjustInventoryStockData {
   referenceId?: string;
 }
 
-const buildInventoryWhereInput = (search?: string): Prisma.ProductWhereInput => {
+const buildWhereBySearch = (search?: string): Prisma.ProductVariantWhereInput => {
   if (!search) {
     return {};
   }
 
   return {
-    OR: [
-      {
-        name: {
-          contains: search,
-          mode: "insensitive",
-        },
-      },
-      {
-        slug: {
-          contains: search,
-          mode: "insensitive",
-        },
-      },
-      {
-        sku: {
-          contains: search,
-          mode: "insensitive",
-        },
-      },
-    ],
+    product: {
+      OR: [
+        { name: { contains: search, mode: "insensitive" } },
+        { slug: { contains: search, mode: "insensitive" } },
+        { sku: { contains: search, mode: "insensitive" } },
+      ],
+    },
   };
 };
 
-const findInventoryProductById = async (id: string): Promise<InventoryProductRecord | null> => {
-  return prisma.product.findUnique({
+const findInventoryVariantById = async (id: string): Promise<InventoryVariantRecord | null> => {
+  return prisma.productVariant.findUnique({
     where: { id },
-    select: inventoryProductSelect,
+    select: inventoryVariantSelect,
   });
 };
 
-const listInventoryProducts = async (options: ListInventoryOptions) => {
-  const where = buildInventoryWhereInput(options.search);
+const listInventoryVariants = async (options: ListInventoryOptions) => {
+  const where = buildWhereBySearch(options.search);
 
-  const [products, total] = await prisma.$transaction([
-    prisma.product.findMany({
+  const [variants, total] = await prisma.$transaction([
+    prisma.productVariant.findMany({
       where,
       skip: options.skip,
       take: options.take,
-      orderBy: {
-        [options.sortBy]: options.sortOrder,
-      },
-      select: inventoryProductSelect,
+      orderBy: { [options.sortBy]: options.sortOrder },
+      select: inventoryVariantSelect,
     }),
-    prisma.product.count({ where }),
+    prisma.productVariant.count({ where }),
   ]);
 
-  return {
-    products,
-    total,
-  };
+  return { variants, total };
 };
 
-const listLowStockProducts = async (options: ListLowStockOptions) => {
-  const searchWhere = buildInventoryWhereInput(options.search);
-  const where: Prisma.ProductWhereInput = {
+const listLowStockVariants = async (options: ListLowStockOptions) => {
+  const searchWhere = buildWhereBySearch(options.search);
+  const where: Prisma.ProductVariantWhereInput = {
     AND: [
       searchWhere,
-      {
-        stock: {
-          lte: options.threshold,
-        },
-      },
-      {
-        isActive: true,
-      },
+      { stock: { lte: options.threshold } },
+      { product: { isActive: true } },
     ],
   };
 
-  const [products, total] = await prisma.$transaction([
-    prisma.product.findMany({
+  const [variants, total] = await prisma.$transaction([
+    prisma.productVariant.findMany({
       where,
       skip: options.skip,
       take: options.take,
-      orderBy: {
-        [options.sortBy]: options.sortOrder,
-      },
-      select: inventoryProductSelect,
+      orderBy: { [options.sortBy]: options.sortOrder },
+      select: inventoryVariantSelect,
     }),
-    prisma.product.count({ where }),
+    prisma.productVariant.count({ where }),
   ]);
 
-  return {
-    products,
-    total,
-  };
+  return { variants, total };
 };
 
 const listInventoryMovements = async (options: ListInventoryMovementsOptions) => {
   const where: Prisma.InventoryMovementWhereInput = {
-    productId: options.productId,
+    productVariantId: options.productVariantId,
   };
 
   const [movements, total] = await prisma.$transaction([
@@ -186,18 +189,13 @@ const listInventoryMovements = async (options: ListInventoryMovementsOptions) =>
       where,
       skip: options.skip,
       take: options.take,
-      orderBy: {
-        createdAt: options.sortOrder,
-      },
+      orderBy: { createdAt: options.sortOrder },
       select: inventoryMovementSelect,
     }),
     prisma.inventoryMovement.count({ where }),
   ]);
 
-  return {
-    movements,
-    total,
-  };
+  return { movements, total };
 };
 
 const createInventoryMovement = async (
@@ -211,29 +209,29 @@ const createInventoryMovement = async (
 
 const adjustInventoryStock = async (
   data: AdjustInventoryStockData,
-): Promise<InventoryProductRecord> => {
+): Promise<InventoryVariantRecord> => {
   return prisma.$transaction(async (transaction) => {
-    const existingProduct = await transaction.product.findUnique({
-      where: { id: data.productId },
-      select: inventoryProductSelect,
+    const existing = await transaction.productVariant.findUnique({
+      where: { id: data.productVariantId },
+      select: inventoryVariantSelect,
     });
 
-    if (!existingProduct) {
-      throw new Error("Product not found");
+    if (!existing) {
+      throw new Error("Product variant not found");
     }
 
-    const updatedProduct = await transaction.product.update({
-      where: { id: data.productId },
+    const updated = await transaction.productVariant.update({
+      where: { id: data.productVariantId },
       data: { stock: data.nextStock },
-      select: inventoryProductSelect,
+      select: inventoryVariantSelect,
     });
 
     await transaction.inventoryMovement.create({
       data: {
-        productId: data.productId,
+        productVariantId: data.productVariantId,
         type: data.type,
-        quantityChange: data.nextStock - existingProduct.stock,
-        previousStock: existingProduct.stock,
+        quantityChange: data.nextStock - existing.stock,
+        previousStock: existing.stock,
         nextStock: data.nextStock,
         reason: data.reason,
         referenceType: data.referenceType,
@@ -242,14 +240,14 @@ const adjustInventoryStock = async (
       select: inventoryMovementSelect,
     });
 
-    return updatedProduct;
+    return updated;
   });
 };
 
 export const inventoryModel = {
-  findInventoryProductById,
-  listInventoryProducts,
-  listLowStockProducts,
+  findInventoryVariantById,
+  listInventoryVariants,
+  listLowStockVariants,
   listInventoryMovements,
   createInventoryMovement,
   adjustInventoryStock,

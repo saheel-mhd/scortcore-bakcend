@@ -6,7 +6,7 @@ import { authenticate, authorize } from "../middlewares/auth.middleware.js";
 import { validateRequest } from "../middlewares/validate.middleware.js";
 import {
   adjustInventoryValidationSchema,
-  inventoryProductParamsValidationSchema,
+  inventoryVariantParamsValidationSchema,
   listInventoryMovementsValidationSchema,
   listInventoryValidationSchema,
   listLowStockValidationSchema,
@@ -23,17 +23,17 @@ inventoryRouter.get(
   inventoryController.listLowStock,
 );
 inventoryRouter.get(
-  "/:productId/movements",
+  "/:productVariantId/movements",
   validateRequest(listInventoryMovementsValidationSchema),
   inventoryController.listInventoryMovements,
 );
 inventoryRouter.put(
-  "/:productId/stock",
+  "/:productVariantId/stock",
   validateRequest(adjustInventoryValidationSchema),
   inventoryController.adjustInventoryStock,
 );
 
-void inventoryProductParamsValidationSchema;
+void inventoryVariantParamsValidationSchema;
 
 export { inventoryRouter };
 export default inventoryRouter;

@@ -7,7 +7,7 @@ const objectIdSchema = z
   .regex(/^[a-fA-F0-9]{24}$/, "A valid id is required");
 
 const orderItemSchema = z.object({
-  productId: objectIdSchema,
+  productVariantId: objectIdSchema,
   quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
 });
 

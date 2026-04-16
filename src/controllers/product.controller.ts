@@ -7,14 +7,12 @@ import type {
   ListProductsQuery,
   ProductIdParams,
   UpdateProductInput,
-  UpdateProductStockInput,
 } from "../validations/product.validation.js";
 
 type CreateProductRequest = Request<Record<string, never>, unknown, CreateProductInput>;
 type UpdateProductRequest = Request<ProductIdParams, unknown, UpdateProductInput>;
 type GetProductRequest = Request<ProductIdParams>;
 type ListProductsRequest = Request<Record<string, string>, unknown, unknown, ListProductsQuery>;
-type UpdateProductStockRequest = Request<ProductIdParams, unknown, UpdateProductStockInput>;
 
 const listProducts: RequestHandler = async (request, response, next) => {
   try {
@@ -57,17 +55,6 @@ const updateProduct: RequestHandler = async (request, response, next) => {
   }
 };
 
-const updateProductStock: RequestHandler = async (request, response, next) => {
-  try {
-    const typedRequest = request as UpdateProductStockRequest;
-    const product = await productService.updateProductStock(typedRequest.params.id, typedRequest.body);
-
-    sendSuccessResponse(response, 200, product, "Product stock updated successfully");
-  } catch (error) {
-    next(error);
-  }
-};
-
 const deleteProduct: RequestHandler = async (request, response, next) => {
   try {
     const product = await productService.deleteProduct((request as GetProductRequest).params.id);
@@ -83,6 +70,5 @@ export const productController = {
   getProduct,
   createProduct,
   updateProduct,
-  updateProductStock,
   deleteProduct,
 };

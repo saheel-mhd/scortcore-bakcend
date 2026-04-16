@@ -75,15 +75,33 @@ model Product {
   sku         String   @unique
   description String?
   price       Float
-  stock       Int      @default(0)
   isActive    Boolean  @default(true)
-  purchaseOrders PurchaseOrder[]
-  inventoryMovements InventoryMovement[]
+  cardImage     String?
+  mainImage     String?
+  galleryImages String[] @default([])
+  variants    ProductVariant[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([name])
   @@index([isActive])
+}
+
+model ProductVariant {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  productId String   @db.ObjectId
+  product   Product  @relation(fields: [productId], references: [id])
+  unitId    String   @db.ObjectId
+  unit      Unit     @relation(fields: [unitId], references: [id])
+  stock     Int      @default(0)
+  inventoryMovements InventoryMovement[]
+  purchaseOrders     PurchaseOrder[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, unitId])
+  @@index([productId])
+  @@index([unitId])
 }
 
 model Order {
@@ -145,6 +163,23 @@ model Homepage {
   updatedAt    DateTime @updatedAt
 }
 
+model HomepageSection {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  title        String
+  description  String?
+  type         String   @default("product")
+  productIds   String[] @db.ObjectId
+  bannerConfig Json?
+  isActive     Boolean  @default(true)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([displayOrder])
+  @@index([type])
+}
+
 model Complaint {
   id         String          @id @default(auto()) @map("_id") @db.ObjectId
   customerId String          @db.ObjectId
@@ -185,43 +220,68 @@ model Coupon {
 }
 
 model InventoryMovement {
-  id             String                @id @default(auto()) @map("_id") @db.ObjectId
-  productId      String                @db.ObjectId
-  product        Product               @relation(fields: [productId], references: [id])
-  type           InventoryMovementType
-  quantityChange Int
-  previousStock  Int
-  nextStock      Int
-  reason         String?
-  referenceType  String?
-  referenceId    String?
-  createdAt      DateTime              @default(now())
+  id               String                @id @default(auto()) @map("_id") @db.ObjectId
+  productVariantId String                @db.ObjectId
+  productVariant   ProductVariant        @relation(fields: [productVariantId], references: [id])
+  type             InventoryMovementType
+  quantityChange   Int
+  previousStock    Int
+  nextStock        Int
+  reason           String?
+  referenceType    String?
+  referenceId      String?
+  createdAt        DateTime              @default(now())
 
-  @@index([productId])
+  @@index([productVariantId])
   @@index([type])
   @@index([createdAt])
 }
 
-model PurchaseOrder {
-  id             String              @id @default(auto()) @map("_id") @db.ObjectId
-  purchaseNumber String              @unique
-  supplierName   String
-  supplierEmail  String?
-  supplierPhone  String?
-  productId      String              @db.ObjectId
-  product        Product             @relation(fields: [productId], references: [id])
-  quantity       Int
-  receivedQuantity Int               @default(0)
-  unitCost       Float
-  totalCost      Float
-  status         PurchaseOrderStatus @default(pending)
-  notes          String?
-  orderedAt      DateTime            @default(now())
-  receivedAt     DateTime?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+model UnitCategory {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique
+  shortName   String   @unique
+  description String?
+  units       Unit[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
 
-  @@index([productId])
+model Unit {
+  id          String        @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  shortName   String
+  description String?
+  categoryId  String        @db.ObjectId
+  category    UnitCategory  @relation(fields: [categoryId], references: [id])
+  productVariants ProductVariant[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([categoryId, shortName])
+  @@index([categoryId])
+}
+
+model PurchaseOrder {
+  id               String              @id @default(auto()) @map("_id") @db.ObjectId
+  purchaseNumber   String              @unique
+  supplierName     String
+  supplierEmail    String?
+  supplierPhone    String?
+  productVariantId String              @db.ObjectId
+  productVariant   ProductVariant      @relation(fields: [productVariantId], references: [id])
+  quantity         Int
+  receivedQuantity Int                 @default(0)
+  unitCost         Float
+  totalCost        Float
+  status           PurchaseOrderStatus @default(pending)
+  notes            String?
+  orderedAt        DateTime            @default(now())
+  receivedAt       DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([productVariantId])
   @@index([status])
   @@index([orderedAt])
 }

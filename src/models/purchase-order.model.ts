@@ -2,13 +2,25 @@ import type { Prisma, PurchaseOrderStatus } from "@prisma/client";
 
 import { prisma } from "../config/prisma.js";
 
-const purchaseOrderProductSelect = {
+const purchaseOrderVariantSelect = {
   id: true,
-  name: true,
-  slug: true,
-  sku: true,
   stock: true,
-} satisfies Prisma.ProductSelect;
+  product: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      sku: true,
+    },
+  },
+  unit: {
+    select: {
+      id: true,
+      name: true,
+      shortName: true,
+    },
+  },
+} satisfies Prisma.ProductVariantSelect;
 
 const publicPurchaseOrderSelect = {
   id: true,
@@ -16,9 +28,9 @@ const publicPurchaseOrderSelect = {
   supplierName: true,
   supplierEmail: true,
   supplierPhone: true,
-  productId: true,
-  product: {
-    select: purchaseOrderProductSelect,
+  productVariantId: true,
+  productVariant: {
+    select: purchaseOrderVariantSelect,
   },
   quantity: true,
   receivedQuantity: true,
@@ -41,7 +53,7 @@ export interface CreatePurchaseOrderRecordData {
   supplierName: string;
   supplierEmail?: string;
   supplierPhone?: string;
-  productId: string;
+  productVariantId: string;
   quantity: number;
   unitCost: number;
   totalCost: number;
@@ -60,54 +72,35 @@ export interface ListPurchaseOrdersOptions {
   take: number;
   search?: string;
   status?: PurchaseOrderStatus;
-  productId?: string;
+  productVariantId?: string;
   sortBy: Prisma.PurchaseOrderScalarFieldEnum;
   sortOrder: Prisma.SortOrder;
 }
 
 const buildPurchaseOrderWhereInput = (
-  options: Pick<ListPurchaseOrdersOptions, "search" | "status" | "productId">,
+  options: Pick<ListPurchaseOrdersOptions, "search" | "status" | "productVariantId">,
 ): Prisma.PurchaseOrderWhereInput => {
   const andConditions: Prisma.PurchaseOrderWhereInput[] = [];
 
   if (options.search) {
     andConditions.push({
       OR: [
-        {
-          purchaseNumber: {
-            contains: options.search,
-            mode: "insensitive",
-          },
-        },
-        {
-          supplierName: {
-            contains: options.search,
-            mode: "insensitive",
-          },
-        },
+        { purchaseNumber: { contains: options.search, mode: "insensitive" } },
+        { supplierName: { contains: options.search, mode: "insensitive" } },
       ],
     });
   }
 
   if (options.status) {
-    andConditions.push({
-      status: options.status,
-    });
+    andConditions.push({ status: options.status });
   }
 
-  if (options.productId) {
-    andConditions.push({
-      productId: options.productId,
-    });
+  if (options.productVariantId) {
+    andConditions.push({ productVariantId: options.productVariantId });
   }
 
-  if (andConditions.length === 0) {
-    return {};
-  }
-
-  return {
-    AND: andConditions,
-  };
+  if (andConditions.length === 0) return {};
+  return { AND: andConditions };
 };
 
 const findPurchaseOrderById = async (id: string): Promise<PurchaseOrderRecord | null> => {
@@ -154,18 +147,13 @@ const listPurchaseOrders = async (options: ListPurchaseOrdersOptions) => {
       where,
       skip: options.skip,
       take: options.take,
-      orderBy: {
-        [options.sortBy]: options.sortOrder,
-      },
+      orderBy: { [options.sortBy]: options.sortOrder },
       select: publicPurchaseOrderSelect,
     }),
     prisma.purchaseOrder.count({ where }),
   ]);
 
-  return {
-    purchaseOrders,
-    total,
-  };
+  return { purchaseOrders, total };
 };
 
 export const purchaseOrderModel = {

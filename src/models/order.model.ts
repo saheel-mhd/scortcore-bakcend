@@ -2,8 +2,6 @@ import type {
   InventoryMovementType,
   OrderStatus,
   Prisma,
-  PrismaClient,
-  Product,
   User,
 } from "@prisma/client";
 
@@ -80,11 +78,9 @@ export interface OrderListOptions {
 }
 
 export interface OrderItemStockInput {
-  productId: string;
+  productVariantId: string;
   quantity: number;
 }
-
-type TransactionClient = Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends">;
 
 const buildOrderWhereInput = (
   options: Pick<OrderListOptions, "status" | "customerId">,
@@ -190,40 +186,46 @@ const createOrderWithStockUpdate = async (
   itemStockInputs: OrderItemStockInput[],
 ): Promise<OrderRecord> => {
   return prisma.$transaction(async (transaction) => {
-    const products = await transaction.product.findMany({
+    const variants = await transaction.productVariant.findMany({
       where: {
         id: {
-          in: itemStockInputs.map((item) => item.productId),
+          in: itemStockInputs.map((item) => item.productVariantId),
         },
+      },
+      include: {
+        product: true,
+        unit: { include: { category: true } },
       },
     });
 
-    if (products.length !== itemStockInputs.length) {
-      throw new Error("One or more products were not found");
+    if (variants.length !== itemStockInputs.length) {
+      throw new Error("One or more product variants were not found");
     }
 
-    const productMap = new Map<string, Product>(products.map((product) => [product.id, product]));
+    const variantMap = new Map(variants.map((variant) => [variant.id, variant]));
 
     for (const item of itemStockInputs) {
-      const product = productMap.get(item.productId);
+      const variant = variantMap.get(item.productVariantId);
 
-      if (!product) {
-        throw new Error("One or more products were not found");
+      if (!variant) {
+        throw new Error("One or more product variants were not found");
       }
 
-      if (!product.isActive) {
-        throw new Error(`Product ${product.name} is inactive and cannot be ordered`);
+      if (!variant.product.isActive) {
+        throw new Error(`Product ${variant.product.name} is inactive and cannot be ordered`);
       }
 
-      if (product.stock < item.quantity) {
-        throw new Error(`Insufficient stock for product ${product.name}`);
+      if (variant.stock < item.quantity) {
+        throw new Error(
+          `Insufficient stock for ${variant.product.name} (${variant.unit.shortName})`,
+        );
       }
     }
 
     await Promise.all(
       itemStockInputs.map((item) =>
-        transaction.product.update({
-          where: { id: item.productId },
+        transaction.productVariant.update({
+          where: { id: item.productVariantId },
           data: {
             stock: {
               decrement: item.quantity,
@@ -240,19 +242,19 @@ const createOrderWithStockUpdate = async (
 
     await Promise.all(
       itemStockInputs.map((item) => {
-        const product = productMap.get(item.productId);
+        const variant = variantMap.get(item.productVariantId);
 
-        if (!product) {
-          throw new Error("One or more products were not found");
+        if (!variant) {
+          throw new Error("One or more product variants were not found");
         }
 
         return transaction.inventoryMovement.create({
           data: {
-            productId: item.productId,
+            productVariantId: item.productVariantId,
             type: "order" satisfies InventoryMovementType,
             quantityChange: -item.quantity,
-            previousStock: product.stock,
-            nextStock: product.stock - item.quantity,
+            previousStock: variant.stock,
+            nextStock: variant.stock - item.quantity,
             reason: `Stock deducted for order ${createdOrder.orderNumber}`,
             referenceType: "order",
             referenceId: createdOrder.id,

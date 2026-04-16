@@ -4,7 +4,7 @@ import { inventoryService } from "../services/inventory.service.js";
 import { sendSuccessResponse } from "../utils/api-response.js";
 import type {
   AdjustInventoryInput,
-  InventoryProductIdParams,
+  InventoryVariantIdParams,
   ListInventoryMovementsQuery,
   ListInventoryQuery,
   ListLowStockQuery,
@@ -12,14 +12,13 @@ import type {
 
 type ListInventoryRequest = Request<Record<string, string>, unknown, unknown, ListInventoryQuery>;
 type ListLowStockRequest = Request<Record<string, string>, unknown, unknown, ListLowStockQuery>;
-type InventoryProductRequest = Request<InventoryProductIdParams>;
 type InventoryMovementsRequest = Request<
-  InventoryProductIdParams,
+  InventoryVariantIdParams,
   unknown,
   unknown,
   ListInventoryMovementsQuery
 >;
-type AdjustInventoryRequest = Request<InventoryProductIdParams, unknown, AdjustInventoryInput>;
+type AdjustInventoryRequest = Request<InventoryVariantIdParams, unknown, AdjustInventoryInput>;
 
 const listInventory: RequestHandler = async (request, response, next) => {
   try {

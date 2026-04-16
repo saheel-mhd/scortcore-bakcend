@@ -2,7 +2,6 @@ import { InventoryMovementType, PurchaseOrderStatus, type Prisma } from "@prisma
 
 import { inventoryModel } from "../models/inventory.model.js";
 import { purchaseOrderModel } from "../models/purchase-order.model.js";
-import { productModel } from "../models/product.model.js";
 import { AppError } from "../utils/app-error.js";
 import type {
   CreatePurchaseOrderInput,
@@ -28,10 +27,10 @@ const generatePurchaseNumber = (): string => {
 };
 
 const createPurchaseOrder = async (input: CreatePurchaseOrderInput) => {
-  const product = await productModel.findProductById(input.productId);
+  const variant = await inventoryModel.findInventoryVariantById(input.productVariantId);
 
-  if (!product) {
-    throw new AppError("Product not found", 404);
+  if (!variant) {
+    throw new AppError("Product variant not found", 404);
   }
 
   const purchaseNumber = generatePurchaseNumber();
@@ -42,7 +41,7 @@ const createPurchaseOrder = async (input: CreatePurchaseOrderInput) => {
     supplierName: input.supplierName,
     supplierEmail: input.supplierEmail,
     supplierPhone: input.supplierPhone,
-    productId: input.productId,
+    productVariantId: input.productVariantId,
     quantity: input.quantity,
     unitCost: input.unitCost,
     totalCost,
@@ -73,7 +72,7 @@ const listPurchaseOrders = async (
     take: limit,
     search: query.search,
     status: query.status,
-    productId: query.productId,
+    productVariantId: query.productVariantId,
     sortBy: query.sortBy as Prisma.PurchaseOrderScalarFieldEnum,
     sortOrder: query.sortOrder,
   });
@@ -114,10 +113,10 @@ const receivePurchaseOrder = async (
     throw new AppError("Received quantity exceeds remaining purchase order quantity", 400);
   }
 
-  const product = await inventoryModel.findInventoryProductById(purchaseOrder.productId);
+  const variant = await inventoryModel.findInventoryVariantById(purchaseOrder.productVariantId);
 
-  if (!product) {
-    throw new AppError("Product not found", 404);
+  if (!variant) {
+    throw new AppError("Product variant not found", 404);
   }
 
   const nextReceivedQuantity = purchaseOrder.receivedQuantity + input.receivedQuantity;
@@ -127,8 +126,8 @@ const receivePurchaseOrder = async (
       : PurchaseOrderStatus.partially_received;
 
   await inventoryModel.adjustInventoryStock({
-    productId: purchaseOrder.productId,
-    nextStock: product.stock + input.receivedQuantity,
+    productVariantId: purchaseOrder.productVariantId,
+    nextStock: variant.stock + input.receivedQuantity,
     type: InventoryMovementType.purchase_order,
     reason:
       input.reason ??
