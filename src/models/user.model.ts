@@ -6,6 +6,7 @@ const publicUserSelect = {
   id: true,
   email: true,
   role: true,
+  roleConfigId: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.UserSelect;
@@ -18,12 +19,14 @@ export interface CreateUserRecordData {
   email: string;
   password: string;
   role: Role;
+  roleConfigId?: string;
 }
 
 export interface UpdateUserRecordData {
   email?: string;
   password?: string;
   role?: Role;
+  roleConfigId?: string | null;
 }
 
 export interface ListUsersOptions {

@@ -1,7 +1,8 @@
 import { hash } from "bcryptjs";
 
-import type { Prisma } from "@prisma/client";
+import { Role, type Prisma } from "@prisma/client";
 import { env } from "../config/env.js";
+import { roleConfigModel } from "../models/role-config.model.js";
 import { userModel } from "../models/user.model.js";
 import { AppError } from "../utils/app-error.js";
 import type {
@@ -19,6 +20,22 @@ interface ListUsersResult {
     totalPages: number;
   };
 }
+
+const systemRoleNames: Record<string, Role> = {
+  admin: Role.admin,
+  staff: Role.staff,
+  customer: Role.customer,
+};
+
+const resolveRoleEnum = async (roleConfigId: string): Promise<Role> => {
+  const roleConfig = await roleConfigModel.findById(roleConfigId);
+  if (!roleConfig) {
+    throw new AppError("Role configuration not found", 400);
+  }
+
+  const mapped = systemRoleNames[roleConfig.name];
+  return mapped ?? Role.staff;
+};
 
 const getUserById = async (id: string) => {
   const user = await userModel.findUserById(id);
@@ -64,12 +81,14 @@ const createUser = async (input: CreateUserInput) => {
     throw new AppError("User with this email already exists", 409);
   }
 
+  const role = input.role ?? (await resolveRoleEnum(input.roleConfigId));
   const hashedPassword = await hash(input.password, env.BCRYPT_SALT_ROUNDS);
 
   return userModel.createUser({
     email: input.email,
     password: hashedPassword,
-    role: input.role,
+    role,
+    roleConfigId: input.roleConfigId,
   });
 };
 
@@ -88,14 +107,11 @@ const updateUser = async (id: string, input: UpdateUserInput, requesterId: strin
     }
   }
 
-  if (requesterId === id && input.role && input.role !== existingUser.role) {
-    throw new AppError("You cannot change your own role from the admin panel", 400);
-  }
-
   const updateData: {
     email?: string;
     password?: string;
-    role?: CreateUserInput["role"];
+    role?: Role;
+    roleConfigId?: string;
   } = {};
 
   if (input.email) {
@@ -106,7 +122,16 @@ const updateUser = async (id: string, input: UpdateUserInput, requesterId: strin
     updateData.password = await hash(input.password, env.BCRYPT_SALT_ROUNDS);
   }
 
-  if (input.role) {
+  if (input.roleConfigId) {
+    if (requesterId === id) {
+      throw new AppError("You cannot change your own role from the admin panel", 400);
+    }
+    updateData.roleConfigId = input.roleConfigId;
+    updateData.role = await resolveRoleEnum(input.roleConfigId);
+  } else if (input.role) {
+    if (requesterId === id && input.role !== existingUser.role) {
+      throw new AppError("You cannot change your own role from the admin panel", 400);
+    }
     updateData.role = input.role;
   }
 

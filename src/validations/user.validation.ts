@@ -29,11 +29,16 @@ const passwordSchema = z
     message: "Password must include at least one special character",
   });
 
+const roleConfigIdSchema = z
+  .string()
+  .regex(/^[a-fA-F0-9]{24}$/, "A valid role config id is required");
+
 export const createUserValidationSchema = z.object({
   body: z.object({
     email: emailSchema,
     password: passwordSchema,
-    role: z.nativeEnum(Role),
+    role: z.nativeEnum(Role).optional(),
+    roleConfigId: roleConfigIdSchema,
   }),
 });
 
@@ -46,6 +51,7 @@ export const updateUserValidationSchema = z.object({
       email: emailSchema.optional(),
       password: passwordSchema.optional(),
       role: z.nativeEnum(Role).optional(),
+      roleConfigId: roleConfigIdSchema.optional(),
     })
     .refine((value) => Object.keys(value).length > 0, {
       message: "At least one field is required to update the user",

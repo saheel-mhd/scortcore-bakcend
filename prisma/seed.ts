@@ -69,7 +69,73 @@ const seedAdminUser = async (): Promise<void> => {
   console.log(`[seed] Created admin user:`, createdUser);
 };
 
+const seedSystemRoles = async (): Promise<void> => {
+  const systemRoles = [
+    {
+      name: "admin",
+      description: "Full access to all features",
+      permissions: {
+        dashboard: true,
+        products: true,
+        orders: true,
+        units: true,
+        coupons: true,
+        layout: true,
+        settings: true,
+      },
+      isSystem: true,
+    },
+    {
+      name: "staff",
+      description: "CRM access without user management",
+      permissions: {
+        dashboard: true,
+        products: true,
+        orders: true,
+        units: true,
+        coupons: true,
+        layout: true,
+        settings: false,
+      },
+      isSystem: true,
+    },
+    {
+      name: "customer",
+      description: "Store access only",
+      permissions: {
+        dashboard: false,
+        products: false,
+        orders: false,
+        units: false,
+        coupons: false,
+        layout: false,
+        settings: false,
+      },
+      isSystem: true,
+    },
+  ];
+
+  for (const role of systemRoles) {
+    const existing = await prisma.roleConfig.findUnique({
+      where: { name: role.name },
+    });
+
+    if (existing) {
+      console.log(`[seed] Role "${role.name}" already exists — skipping.`);
+      continue;
+    }
+
+    const created = await prisma.roleConfig.create({
+      data: role,
+      select: { id: true, name: true, isSystem: true },
+    });
+
+    console.log(`[seed] Created system role:`, created);
+  }
+};
+
 seedAdminUser()
+  .then(() => seedSystemRoles())
   .catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
