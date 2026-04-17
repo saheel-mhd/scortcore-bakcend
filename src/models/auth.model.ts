@@ -4,6 +4,7 @@ import { prisma } from "../config/prisma.js";
 
 const publicUserSelect = {
   id: true,
+  name: true,
   email: true,
   role: true,
   createdAt: true,
@@ -15,6 +16,8 @@ export type PublicUser = Prisma.UserGetPayload<{
 }>;
 
 export interface CreateUserData {
+  name: string;
+  phone?: string;
   email: string;
   password: string;
   role: Role;

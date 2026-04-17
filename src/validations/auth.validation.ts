@@ -32,6 +32,8 @@ const loginPasswordSchema = z
 
 export const registerValidationSchema = z.object({
   body: z.object({
+    name: z.string().trim().min(1, "Name is required").max(100, "Name must not exceed 100 characters"),
+    phone: z.string().trim().min(4, "Phone number is too short").max(20, "Phone number is too long").optional(),
     email: emailSchema,
     password: passwordSchema,
     role: z.literal(Role.customer).default(Role.customer),

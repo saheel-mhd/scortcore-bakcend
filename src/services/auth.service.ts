@@ -46,6 +46,8 @@ const register = async (input: RegisterUserInput): Promise<AuthResult> => {
   const hashedPassword = await hashPassword(input.password);
 
   const createdUser = await authModel.createUser({
+    name: input.name,
+    phone: input.phone,
     email: input.email,
     password: hashedPassword,
     role: input.role,
