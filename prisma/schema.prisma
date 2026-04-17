@@ -57,15 +57,37 @@ enum PurchaseOrderStatus {
 }
 
 model User {
-  id                String      @id @default(auto()) @map("_id") @db.ObjectId
-  email             String      @unique
-  password          String
-  role              Role        @default(customer)
-  orders            Order[]
-  complaints        Complaint[] @relation("CustomerComplaints")
-  complaintReplies  Complaint[] @relation("AdminComplaintReplies")
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  id                 String      @id @default(auto()) @map("_id") @db.ObjectId
+  email              String      @unique
+  password           String
+  role               Role        @default(customer)
+  wishlistProductIds String[]    @db.ObjectId
+  addresses          Address[]
+  orders             Order[]
+  complaints         Complaint[] @relation("CustomerComplaints")
+  complaintReplies   Complaint[] @relation("AdminComplaintReplies")
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+}
+
+model Address {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  customerId String   @db.ObjectId
+  customer   User     @relation(fields: [customerId], references: [id])
+  label      String?
+  fullName   String
+  phone      String?
+  line1      String
+  line2      String?
+  city       String
+  state      String?
+  postalCode String
+  country    String
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([customerId])
 }
 
 model Product {
@@ -168,6 +190,24 @@ model HomepageSection {
   title        String
   description  String?
   type         String   @default("product")
+  productIds   String[] @db.ObjectId
+  bannerConfig Json?
+  isActive     Boolean  @default(true)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([displayOrder])
+  @@index([type])
+}
+
+model ShopSection {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  title        String
+  description  String?
+  type         String   @default("grid")
+  columns      Int      @default(4)
   productIds   String[] @db.ObjectId
   bannerConfig Json?
   isActive     Boolean  @default(true)

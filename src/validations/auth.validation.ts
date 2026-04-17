@@ -45,5 +45,13 @@ export const loginValidationSchema = z.object({
   }),
 });
 
+export const changePasswordValidationSchema = z.object({
+  body: z.object({
+    currentPassword: loginPasswordSchema,
+    newPassword: passwordSchema,
+  }),
+});
+
 export type RegisterUserInput = z.infer<typeof registerValidationSchema>["body"];
 export type LoginUserInput = z.infer<typeof loginValidationSchema>["body"];
+export type ChangePasswordInput = z.infer<typeof changePasswordValidationSchema>["body"];

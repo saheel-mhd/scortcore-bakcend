@@ -1,6 +1,10 @@
 import type { Role, User } from "@prisma/client";
 import { authModel, type PublicUser } from "../models/auth.model.js";
-import type { LoginUserInput, RegisterUserInput } from "../validations/auth.validation.js";
+import type {
+  ChangePasswordInput,
+  LoginUserInput,
+  RegisterUserInput,
+} from "../validations/auth.validation.js";
 import { AppError } from "../utils/app-error.js";
 import { comparePassword, hashPassword } from "../utils/hash.js";
 import { generateAuthToken } from "../utils/jwt.js";
@@ -86,7 +90,43 @@ const login = async (input: LoginUserInput): Promise<AuthResult> => {
   };
 };
 
+const getMe = async (userId: string): Promise<PublicUser> => {
+  const user = await authModel.findPublicUserById(userId);
+
+  if (!user) {
+    throw new AppError("User not found", 404);
+  }
+
+  return user;
+};
+
+const changeMyPassword = async (
+  userId: string,
+  input: ChangePasswordInput,
+): Promise<PublicUser> => {
+  const user = await authModel.findUserById(userId);
+
+  if (!user) {
+    throw new AppError("User not found", 404);
+  }
+
+  const isCurrentValid = await comparePassword(input.currentPassword, user.password);
+
+  if (!isCurrentValid) {
+    throw new AppError("Current password is incorrect", 400);
+  }
+
+  if (input.currentPassword === input.newPassword) {
+    throw new AppError("New password must be different from the current password", 400);
+  }
+
+  const hashed = await hashPassword(input.newPassword);
+  return authModel.updateUserPassword(userId, hashed);
+};
+
 export const authService = {
   register,
   login,
+  getMe,
+  changeMyPassword,
 };

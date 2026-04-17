@@ -163,8 +163,94 @@ const applyCoupon = async (
   });
 };
 
+const list = async (query: {
+  page: number;
+  limit: number;
+  sortBy: string;
+  sortOrder: "asc" | "desc";
+  isActive?: boolean;
+  type?: "percentage" | "fixed";
+  search?: string;
+}) => {
+  const page = query.page;
+  const limit = query.limit;
+  const skip = (page - 1) * limit;
+
+  const result = await couponModel.list({
+    skip,
+    take: limit,
+    sortBy: query.sortBy,
+    sortOrder: query.sortOrder,
+    isActive: query.isActive,
+    type: query.type,
+    search: query.search,
+  });
+
+  const totalPages = result.total === 0 ? 0 : Math.ceil(result.total / limit);
+
+  return {
+    items: result.items,
+    pagination: { page, limit, total: result.total, totalPages },
+  };
+};
+
+const getById = async (id: string) => {
+  const coupon = await couponModel.findCouponById(id);
+  if (!coupon) {
+    throw new AppError("Coupon not found", 404);
+  }
+  return coupon;
+};
+
+const updateCoupon = async (
+  id: string,
+  input: {
+    description?: string | null;
+    type?: "percentage" | "fixed";
+    value?: number;
+    minOrderAmount?: number | null;
+    maxDiscountAmount?: number | null;
+    isActive?: boolean;
+    expiresAt?: string | null;
+    usageLimit?: number | null;
+  },
+) => {
+  const existing = await couponModel.findCouponById(id);
+  if (!existing) {
+    throw new AppError("Coupon not found", 404);
+  }
+
+  return couponModel.updateCoupon(id, {
+    description: input.description,
+    type: input.type,
+    value: input.value,
+    minOrderAmount: input.minOrderAmount,
+    maxDiscountAmount: input.maxDiscountAmount,
+    isActive: input.isActive,
+    expiresAt:
+      input.expiresAt === undefined
+        ? undefined
+        : input.expiresAt === null
+          ? null
+          : new Date(input.expiresAt),
+    usageLimit: input.usageLimit,
+  });
+};
+
+const deleteCoupon = async (id: string) => {
+  const existing = await couponModel.findCouponById(id);
+  if (!existing) {
+    throw new AppError("Coupon not found", 404);
+  }
+  return couponModel.deleteCoupon(id);
+};
+
 export const couponService = {
   createCoupon,
   validateCoupon,
   applyCoupon,
+  list,
+  getById,
+  updateCoupon,
+  deleteCoupon,
 };

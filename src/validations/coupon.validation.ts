@@ -55,6 +55,53 @@ export const applyCouponValidationSchema = z.object({
   body: couponActionBodySchema,
 });
 
+export const listCouponsValidationSchema = z.object({
+  query: z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+    sortBy: z.enum(["createdAt", "updatedAt", "code", "value", "usedCount"]).default("createdAt"),
+    sortOrder: z.enum(["asc", "desc"]).default("desc"),
+    isActive: z.coerce.boolean().optional(),
+    type: z.nativeEnum(CouponType).optional(),
+    search: z.string().trim().max(100).optional(),
+  }),
+});
+
+export const getCouponValidationSchema = z.object({
+  params: z.object({
+    id: objectIdSchema,
+  }),
+});
+
+export const updateCouponValidationSchema = z.object({
+  params: z.object({
+    id: objectIdSchema,
+  }),
+  body: z
+    .object({
+      description: z.string().trim().min(1).max(300).nullable().optional(),
+      type: z.nativeEnum(CouponType).optional(),
+      value: moneySchema.optional(),
+      minOrderAmount: moneySchema.nullable().optional(),
+      maxDiscountAmount: moneySchema.nullable().optional(),
+      isActive: z.coerce.boolean().optional(),
+      expiresAt: z.iso.datetime().nullable().optional(),
+      usageLimit: z.coerce.number().int().min(1).nullable().optional(),
+    })
+    .refine((value) => Object.keys(value).length > 0, {
+      message: "At least one field is required to update the coupon",
+    }),
+});
+
+export const deleteCouponValidationSchema = z.object({
+  params: z.object({
+    id: objectIdSchema,
+  }),
+});
+
 export type CreateCouponInput = z.infer<typeof createCouponValidationSchema>["body"];
 export type ValidateCouponInput = z.infer<typeof validateCouponValidationSchema>["body"];
 export type ApplyCouponInput = z.infer<typeof applyCouponValidationSchema>["body"];
+export type ListCouponsQuery = z.infer<typeof listCouponsValidationSchema>["query"];
+export type UpdateCouponInput = z.infer<typeof updateCouponValidationSchema>["body"];
+export type CouponIdParams = z.infer<typeof getCouponValidationSchema>["params"];

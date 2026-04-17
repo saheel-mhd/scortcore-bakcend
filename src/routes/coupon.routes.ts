@@ -7,18 +7,15 @@ import { validateRequest } from "../middlewares/validate.middleware.js";
 import {
   applyCouponValidationSchema,
   createCouponValidationSchema,
+  deleteCouponValidationSchema,
+  getCouponValidationSchema,
+  listCouponsValidationSchema,
+  updateCouponValidationSchema,
   validateCouponValidationSchema,
 } from "../validations/coupon.validation.js";
 
 const couponRouter = Router();
 
-couponRouter.post(
-  "/",
-  authenticate,
-  authorize(Role.admin),
-  validateRequest(createCouponValidationSchema),
-  couponController.createCoupon,
-);
 couponRouter.post(
   "/validate",
   authenticate,
@@ -30,6 +27,34 @@ couponRouter.post(
   authenticate,
   validateRequest(applyCouponValidationSchema),
   couponController.applyCoupon,
+);
+
+couponRouter.use(authenticate, authorize(Role.admin, Role.staff));
+
+couponRouter.get(
+  "/",
+  validateRequest(listCouponsValidationSchema),
+  couponController.list,
+);
+couponRouter.get(
+  "/:id",
+  validateRequest(getCouponValidationSchema),
+  couponController.getOne,
+);
+couponRouter.post(
+  "/",
+  validateRequest(createCouponValidationSchema),
+  couponController.createCoupon,
+);
+couponRouter.put(
+  "/:id",
+  validateRequest(updateCouponValidationSchema),
+  couponController.update,
+);
+couponRouter.delete(
+  "/:id",
+  validateRequest(deleteCouponValidationSchema),
+  couponController.remove,
 );
 
 export { couponRouter };

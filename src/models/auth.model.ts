@@ -33,7 +33,31 @@ const createUser = async (data: CreateUserData): Promise<PublicUser> => {
   });
 };
 
+const findUserById = async (id: string): Promise<User | null> => {
+  return prisma.user.findUnique({
+    where: { id },
+  });
+};
+
+const findPublicUserById = async (id: string): Promise<PublicUser | null> => {
+  return prisma.user.findUnique({
+    where: { id },
+    select: publicUserSelect,
+  });
+};
+
+const updateUserPassword = async (id: string, hashedPassword: string): Promise<PublicUser> => {
+  return prisma.user.update({
+    where: { id },
+    data: { password: hashedPassword },
+    select: publicUserSelect,
+  });
+};
+
 export const authModel = {
   findUserByEmail,
+  findUserById,
+  findPublicUserById,
   createUser,
+  updateUserPassword,
 };
