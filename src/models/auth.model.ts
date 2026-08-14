@@ -1,5 +1,4 @@
 import type { Prisma, Role, User } from "@prisma/client";
-
 import { prisma } from "../config/prisma.js";
 
 const publicUserSelect = {
@@ -11,9 +10,7 @@ const publicUserSelect = {
   updatedAt: true,
 } satisfies Prisma.UserSelect;
 
-export type PublicUser = Prisma.UserGetPayload<{
-  select: typeof publicUserSelect;
-}>;
+export type PublicUser = Prisma.UserGetPayload<{ select: typeof publicUserSelect; }>;
 
 export interface CreateUserData {
   name: string;
@@ -57,10 +54,34 @@ const updateUserPassword = async (id: string, hashedPassword: string): Promise<P
   });
 };
 
+const findUserAuthorization = async (
+  id: string,
+): Promise<{ role: Role; permissions: unknown } | null> => {
+  const user = await prisma.user.findUnique({
+    where: { id },
+    select: {
+      role: true,
+      roleConfig: {
+        select: { permissions: true },
+      },
+    },
+  });
+
+  if (!user) {
+    return null;
+  }
+
+  return {
+    role: user.role,
+    permissions: user.roleConfig?.permissions ?? null,
+  };
+};
+
 export const authModel = {
   findUserByEmail,
   findUserById,
   findPublicUserById,
+  findUserAuthorization,
   createUser,
   updateUserPassword,
 };

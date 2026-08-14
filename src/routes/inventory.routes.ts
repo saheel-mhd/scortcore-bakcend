@@ -1,21 +1,13 @@
 import { Router } from "express";
-
-import { Role } from "@prisma/client";
 import { inventoryController } from "../controllers/inventory.controller.js";
 import { authenticate, authorize } from "../middlewares/auth.middleware.js";
+import { requirePermission } from "../middlewares/permission.middleware.js";
 import { validateRequest } from "../middlewares/validate.middleware.js";
-import {
-  adjustInventoryValidationSchema,
-  inventoryVariantParamsValidationSchema,
-  listInventoryMovementsValidationSchema,
-  listInventoryValidationSchema,
-  listLowStockValidationSchema,
-} from "../validations/inventory.validation.js";
+import { adjustInventoryValidationSchema, inventoryVariantParamsValidationSchema, listInventoryMovementsValidationSchema, listInventoryValidationSchema, listLowStockValidationSchema, } from "../validations/inventory.validation.js";
 
 const inventoryRouter = Router();
 
-inventoryRouter.use(authenticate, authorize(Role.admin, Role.staff));
-
+inventoryRouter.use(authenticate, requirePermission("products"));
 inventoryRouter.get("/", validateRequest(listInventoryValidationSchema), inventoryController.listInventory);
 inventoryRouter.get(
   "/low-stock",

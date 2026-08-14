@@ -1,18 +1,31 @@
 import type { Role, User } from "@prisma/client";
 import { authModel, type PublicUser } from "../models/auth.model.js";
-import type {
-  ChangePasswordInput,
-  LoginUserInput,
-  RegisterUserInput,
-} from "../validations/auth.validation.js";
+import type { ChangePasswordInput, LoginUserInput, RegisterUserInput, } from "../validations/auth.validation.js";
 import { AppError } from "../utils/app-error.js";
 import { comparePassword, hashPassword } from "../utils/hash.js";
 import { generateAuthToken } from "../utils/jwt.js";
+import { resolvePermissions, type RolePermissionMap } from "../utils/permissions.js";
+
+export interface AuthProfile extends PublicUser {
+  permissions: RolePermissionMap;
+}
 
 export interface AuthResult {
-  user: PublicUser;
+  user: AuthProfile;
   token: string;
 }
+
+const withPermissions = async (user: PublicUser): Promise<AuthProfile> => {
+  const authorization = await authModel.findUserAuthorization(user.id);
+
+  return {
+    ...user,
+    permissions: resolvePermissions(
+      authorization?.role ?? user.role,
+      authorization?.permissions ?? null,
+    ),
+  };
+};
 
 interface JwtUserPayload {
   sub: string;
@@ -25,6 +38,7 @@ const fallbackPasswordHash = "$2b$12$EggAxUWRdIMB5pop4etW/OJroEGUVATFx15b57Vlqwr
 const toPublicUser = (user: User): PublicUser => {
   return {
     id: user.id,
+    name: user.name,
     email: user.email,
     role: user.role,
     createdAt: user.createdAt,
@@ -60,7 +74,7 @@ const register = async (input: RegisterUserInput): Promise<AuthResult> => {
   });
 
   return {
-    user: createdUser,
+    user: await withPermissions(createdUser),
     token,
   };
 };
@@ -87,19 +101,19 @@ const login = async (input: LoginUserInput): Promise<AuthResult> => {
   });
 
   return {
-    user: publicUser,
+    user: await withPermissions(publicUser),
     token,
   };
 };
 
-const getMe = async (userId: string): Promise<PublicUser> => {
+const getMe = async (userId: string): Promise<AuthProfile> => {
   const user = await authModel.findPublicUserById(userId);
 
   if (!user) {
     throw new AppError("User not found", 404);
   }
 
-  return user;
+  return withPermissions(user);
 };
 
 const changeMyPassword = async (

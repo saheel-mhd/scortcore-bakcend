@@ -1,17 +1,9 @@
 import { Router } from "express";
-
-import { Role } from "@prisma/client";
 import { complaintController } from "../controllers/complaint.controller.js";
 import { authenticate, authorize } from "../middlewares/auth.middleware.js";
+import { requirePermission } from "../middlewares/permission.middleware.js";
 import { validateRequest } from "../middlewares/validate.middleware.js";
-import {
-  createComplaintValidationSchema,
-  getComplaintValidationSchema,
-  listComplaintsValidationSchema,
-  listMyComplaintsValidationSchema,
-  replyComplaintValidationSchema,
-  updateComplaintStatusValidationSchema,
-} from "../validations/complaint.validation.js";
+import { createComplaintValidationSchema, getComplaintValidationSchema, listComplaintsValidationSchema, listMyComplaintsValidationSchema, replyComplaintValidationSchema, updateComplaintStatusValidationSchema, } from "../validations/complaint.validation.js";
 
 const complaintRouter = Router();
 
@@ -29,7 +21,7 @@ complaintRouter.get(
 );
 complaintRouter.get(
   "/",
-  authorize(Role.admin),
+  requirePermission("orders"),
   validateRequest(listComplaintsValidationSchema),
   complaintController.listComplaints,
 );
@@ -40,13 +32,13 @@ complaintRouter.get(
 );
 complaintRouter.put(
   "/:id/reply",
-  authorize(Role.admin),
+  requirePermission("orders"),
   validateRequest(replyComplaintValidationSchema),
   complaintController.replyToComplaint,
 );
 complaintRouter.put(
   "/:id/status",
-  authorize(Role.admin),
+  requirePermission("orders"),
   validateRequest(updateComplaintStatusValidationSchema),
   complaintController.updateComplaintStatus,
 );

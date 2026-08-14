@@ -1,20 +1,13 @@
 import { Router } from "express";
-
-import { Role } from "@prisma/client";
 import { roleConfigController } from "../controllers/role-config.controller.js";
 import { authenticate, authorize } from "../middlewares/auth.middleware.js";
+import { requirePermission } from "../middlewares/permission.middleware.js";
 import { validateRequest } from "../middlewares/validate.middleware.js";
-import {
-  createRoleConfigValidationSchema,
-  deleteRoleConfigValidationSchema,
-  getRoleConfigValidationSchema,
-  updateRoleConfigValidationSchema,
-} from "../validations/role-config.validation.js";
+import { createRoleConfigValidationSchema, deleteRoleConfigValidationSchema, getRoleConfigValidationSchema, updateRoleConfigValidationSchema, } from "../validations/role-config.validation.js";
 
 const roleConfigRouter = Router();
 
-roleConfigRouter.use(authenticate, authorize(Role.admin));
-
+roleConfigRouter.use(authenticate, requirePermission("settings"));
 roleConfigRouter.get("/", roleConfigController.list);
 roleConfigRouter.get(
   "/:id",

@@ -1,15 +1,10 @@
 import { hash } from "bcryptjs";
-
 import { Role, type Prisma } from "@prisma/client";
 import { env } from "../config/env.js";
 import { roleConfigModel } from "../models/role-config.model.js";
 import { userModel } from "../models/user.model.js";
 import { AppError } from "../utils/app-error.js";
-import type {
-  CreateUserInput,
-  ListUsersQuery,
-  UpdateUserInput,
-} from "../validations/user.validation.js";
+import type { CreateUserInput, ListUsersQuery, UpdateUserInput, } from "../validations/user.validation.js";
 
 interface ListUsersResult {
   users: Awaited<ReturnType<typeof userModel.listUsers>>["users"];
@@ -81,7 +76,7 @@ const createUser = async (input: CreateUserInput) => {
     throw new AppError("User with this email already exists", 409);
   }
 
-  const role = input.role ?? (await resolveRoleEnum(input.roleConfigId));
+  const role = await resolveRoleEnum(input.roleConfigId);
   const hashedPassword = await hash(input.password, env.BCRYPT_SALT_ROUNDS);
 
   return userModel.createUser({
@@ -128,11 +123,6 @@ const updateUser = async (id: string, input: UpdateUserInput, requesterId: strin
     }
     updateData.roleConfigId = input.roleConfigId;
     updateData.role = await resolveRoleEnum(input.roleConfigId);
-  } else if (input.role) {
-    if (requesterId === id && input.role !== existingUser.role) {
-      throw new AppError("You cannot change your own role from the admin panel", 400);
-    }
-    updateData.role = input.role;
   }
 
   return userModel.updateUser(id, updateData);

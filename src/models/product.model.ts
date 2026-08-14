@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-
+import { InventoryMovementType } from "@prisma/client";
 import { prisma } from "../config/prisma.js";
 
 const variantSelect = {
@@ -171,6 +171,37 @@ const updateProduct = async (id: string, data: UpdateProductRecordData): Promise
   });
 };
 
+const findTransactedVariantIds = async (variantIds: string[]): Promise<string[]> => {
+  if (variantIds.length === 0) {
+    return [];
+  }
+
+  const [purchaseOrders, movements] = await Promise.all([
+    prisma.purchaseOrder.findMany({
+      where: { productVariantId: { in: variantIds } },
+      select: { productVariantId: true },
+      distinct: ["productVariantId"],
+    }),
+    prisma.inventoryMovement.findMany({
+      where: {
+        productVariantId: { in: variantIds },
+        type: {
+          in: [InventoryMovementType.order, InventoryMovementType.purchase_order],
+        },
+      },
+      select: { productVariantId: true },
+      distinct: ["productVariantId"],
+    }),
+  ]);
+
+  return Array.from(
+    new Set([
+      ...purchaseOrders.map((record) => record.productVariantId),
+      ...movements.map((record) => record.productVariantId),
+    ]),
+  );
+};
+
 const replaceVariants = async (
   productId: string,
   variants: { id?: string; unitId: string; stock: number }[],
@@ -187,10 +218,17 @@ const replaceVariants = async (
     const toDelete = existing.filter((v) => !keptIds.has(v.id)).map((v) => v.id);
 
     if (toDelete.length > 0) {
-      await tx.inventoryMovement.deleteMany({
+      const linkedPurchaseOrders = await tx.purchaseOrder.count({
         where: { productVariantId: { in: toDelete } },
       });
-      await tx.purchaseOrder.deleteMany({
+
+      if (linkedPurchaseOrders > 0) {
+        throw new Error(
+          "Cannot remove a variant that has purchase orders recorded against it",
+        );
+      }
+
+      await tx.inventoryMovement.deleteMany({
         where: { productVariantId: { in: toDelete } },
       });
       await tx.productVariant.deleteMany({
@@ -233,10 +271,17 @@ const deleteProduct = async (id: string): Promise<ProductRecord> => {
     const variantIds = variants.map((v) => v.id);
 
     if (variantIds.length > 0) {
-      await tx.inventoryMovement.deleteMany({
+      const linkedPurchaseOrders = await tx.purchaseOrder.count({
         where: { productVariantId: { in: variantIds } },
       });
-      await tx.purchaseOrder.deleteMany({
+
+      if (linkedPurchaseOrders > 0) {
+        throw new Error(
+          "Cannot delete a product whose variants have purchase orders recorded against them",
+        );
+      }
+
+      await tx.inventoryMovement.deleteMany({
         where: { productVariantId: { in: variantIds } },
       });
       await tx.productVariant.deleteMany({
@@ -269,6 +314,7 @@ const listProducts = async (options: ListProductsOptions) => {
 };
 
 export const productModel = {
+  findTransactedVariantIds,
   findProductById,
   findProductBySlug,
   findProductBySku,

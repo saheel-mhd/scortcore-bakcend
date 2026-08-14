@@ -1,23 +1,14 @@
 import { Router } from "express";
-
-import { Role } from "@prisma/client";
 import { homepageSectionController } from "../controllers/homepage-section.controller.js";
 import { authenticate, authorize } from "../middlewares/auth.middleware.js";
+import { requirePermission } from "../middlewares/permission.middleware.js";
 import { validateRequest } from "../middlewares/validate.middleware.js";
-import {
-  createHomepageSectionValidationSchema,
-  deleteHomepageSectionValidationSchema,
-  getHomepageSectionValidationSchema,
-  listHomepageSectionsValidationSchema,
-  updateHomepageSectionValidationSchema,
-} from "../validations/homepage-section.validation.js";
+import { createHomepageSectionValidationSchema, deleteHomepageSectionValidationSchema, getHomepageSectionValidationSchema, listHomepageSectionsValidationSchema, updateHomepageSectionValidationSchema, } from "../validations/homepage-section.validation.js";
 
 const homepageSectionRouter = Router();
 
 homepageSectionRouter.get("/active", homepageSectionController.listActive);
-
-homepageSectionRouter.use(authenticate, authorize(Role.admin, Role.staff));
-
+homepageSectionRouter.use(authenticate, requirePermission("layout"));
 homepageSectionRouter.get(
   "/",
   validateRequest(listHomepageSectionsValidationSchema),

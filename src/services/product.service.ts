@@ -1,15 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import { InventoryMovementType } from "@prisma/client";
-
 import { prisma } from "../config/prisma.js";
 import { inventoryModel } from "../models/inventory.model.js";
 import { productModel } from "../models/product.model.js";
 import { AppError } from "../utils/app-error.js";
-import type {
-  CreateProductInput,
-  ListProductsQuery,
-  UpdateProductInput,
-} from "../validations/product.validation.js";
+import type { CreateProductInput, ListProductsQuery, UpdateProductInput, } from "../validations/product.validation.js";
 
 interface ListProductsResult {
   products: Awaited<ReturnType<typeof productModel.listProducts>>["products"];
@@ -47,6 +42,33 @@ const ensureUniqueProductFields = async (
   if (productWithSameSku && productWithSameSku.id !== currentProductId) {
     throw new AppError("Product with this SKU already exists", 409);
   }
+};
+
+const ensureVariantsAreRemovable = async (
+  variants: { id: string; unit?: { name: string } | null }[],
+): Promise<void> => {
+  if (variants.length === 0) {
+    return;
+  }
+
+  const transactedIds = new Set(
+    await productModel.findTransactedVariantIds(variants.map((variant) => variant.id)),
+  );
+
+  if (transactedIds.size === 0) {
+    return;
+  }
+
+  const blocked = variants
+    .filter((variant) => transactedIds.has(variant.id))
+    .map((variant) => variant.unit?.name ?? variant.id);
+
+  throw new AppError(
+    `Cannot remove ${blocked.join(", ")} — ${
+      blocked.length === 1 ? "it has" : "they have"
+    } purchase orders or customer orders recorded. Set the stock to 0 instead of deleting.`,
+    409,
+  );
 };
 
 const ensureVariantsValid = async (
@@ -178,6 +200,14 @@ const updateProduct = async (id: string, input: UpdateProductInput) => {
 
   if (input.variants) {
     await ensureVariantsValid(input.variants);
+
+    const keptIds = new Set(
+      input.variants.map((v) => v.id).filter((id): id is string => typeof id === "string"),
+    );
+    await ensureVariantsAreRemovable(
+      existingProduct.variants.filter((variant) => !keptIds.has(variant.id)),
+    );
+
     const prevStockById = new Map(existingProduct.variants.map((v) => [v.id, v.stock]));
     const updated = await productModel.replaceVariants(
       id,
@@ -215,6 +245,17 @@ const deleteProduct = async (id: string) => {
 
   if (!existingProduct) {
     throw new AppError("Product not found", 404);
+  }
+
+  const transactedIds = await productModel.findTransactedVariantIds(
+    existingProduct.variants.map((variant) => variant.id),
+  );
+
+  if (transactedIds.length > 0) {
+    throw new AppError(
+      `"${existingProduct.name}" has purchase orders or customer orders recorded and cannot be deleted. Deactivate it instead so it disappears from the storefront while its history is kept.`,
+      409,
+    );
   }
 
   return productModel.deleteProduct(id);

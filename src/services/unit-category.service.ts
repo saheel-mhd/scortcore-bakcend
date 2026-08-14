@@ -1,12 +1,7 @@
 import type { Prisma } from "@prisma/client";
-
 import { unitCategoryModel } from "../models/unit-category.model.js";
 import { AppError } from "../utils/app-error.js";
-import type {
-  CreateUnitCategoryInput,
-  ListUnitCategoriesQuery,
-  UpdateUnitCategoryInput,
-} from "../validations/unit-category.validation.js";
+import type { CreateUnitCategoryInput, ListUnitCategoriesQuery, UpdateUnitCategoryInput, } from "../validations/unit-category.validation.js";
 
 interface ListResult {
   items: Awaited<ReturnType<typeof unitCategoryModel.list>>["items"];
@@ -103,6 +98,17 @@ const remove = async (id: string) => {
   const existing = await unitCategoryModel.findById(id);
   if (!existing) {
     throw new AppError("Unit category not found", 404);
+  }
+
+  const dependentVariants = await unitCategoryModel.countDependentVariants(id);
+
+  if (dependentVariants > 0) {
+    throw new AppError(
+      `"${existing.name}" has units used by ${dependentVariants} product variant${
+        dependentVariants === 1 ? "" : "s"
+      } and cannot be deleted. Remove those variants from their products first.`,
+      409,
+    );
   }
 
   return unitCategoryModel.remove(id);

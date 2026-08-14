@@ -1,21 +1,15 @@
 import type { Request, RequestHandler } from "express";
-
 import type { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
 import { orderService } from "../services/order.service.js";
 import { sendSuccessResponse } from "../utils/api-response.js";
-import type {
-  CreateOrderInput,
-  ListOrdersQuery,
-  ListUserOrdersQuery,
-  OrderIdParams,
-  UpdateOrderStatusInput,
-} from "../validations/order.validation.js";
+import type { CancelOrderInput, CreateOrderInput, ListOrdersQuery, ListUserOrdersQuery, OrderIdParams, UpdateOrderStatusInput, } from "../validations/order.validation.js";
 
 type CreateOrderRequest = Request<Record<string, never>, unknown, CreateOrderInput>;
 type GetOrderRequest = Request<OrderIdParams>;
 type ListOrdersRequest = Request<Record<string, string>, unknown, unknown, ListOrdersQuery>;
 type ListUserOrdersRequest = Request<Record<string, string>, unknown, unknown, ListUserOrdersQuery>;
 type UpdateOrderStatusRequest = Request<OrderIdParams, unknown, UpdateOrderStatusInput>;
+type CancelOrderRequest = Request<OrderIdParams, unknown, CancelOrderInput>;
 
 const createOrder: RequestHandler = async (request, response, next) => {
   try {
@@ -84,11 +78,27 @@ const deleteOrder: RequestHandler = async (request, response, next) => {
   }
 };
 
+const cancelOrder: RequestHandler = async (request, response, next) => {
+  try {
+    const authed = request as AuthenticatedRequest;
+    const order = await orderService.cancelOrder(
+      (request as CancelOrderRequest).params.id,
+      (request as CancelOrderRequest).body,
+      authed.user!,
+    );
+
+    sendSuccessResponse(response, 200, order, "Order cancelled successfully");
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const orderController = {
   createOrder,
   getOrder,
   listUserOrders,
   listOrders,
   updateOrderStatus,
+  cancelOrder,
   deleteOrder,
 };

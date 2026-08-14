@@ -1,5 +1,4 @@
 import { z } from "zod";
-
 import { Role } from "@prisma/client";
 
 const objectIdSchema = z
@@ -37,7 +36,6 @@ export const createUserValidationSchema = z.object({
   body: z.object({
     email: emailSchema,
     password: passwordSchema,
-    role: z.nativeEnum(Role).optional(),
     roleConfigId: roleConfigIdSchema,
   }),
 });
@@ -50,7 +48,6 @@ export const updateUserValidationSchema = z.object({
     .object({
       email: emailSchema.optional(),
       password: passwordSchema.optional(),
-      role: z.nativeEnum(Role).optional(),
       roleConfigId: roleConfigIdSchema.optional(),
     })
     .refine((value) => Object.keys(value).length > 0, {

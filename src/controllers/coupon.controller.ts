@@ -1,19 +1,12 @@
 import type { Request, RequestHandler } from "express";
-
 import type { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
 import { couponService } from "../services/coupon.service.js";
 import { sendSuccessResponse } from "../utils/api-response.js";
-import type {
-  ApplyCouponInput,
-  CouponIdParams,
-  CreateCouponInput,
-  ListCouponsQuery,
-  UpdateCouponInput,
-  ValidateCouponInput,
-} from "../validations/coupon.validation.js";
+import type { ApplyCouponInput, CouponIdParams, CreateCouponInput, ListCouponsQuery, UpdateCouponInput, ValidateCartCouponInput, ValidateCouponInput, } from "../validations/coupon.validation.js";
 
 type CreateCouponRequest = Request<Record<string, never>, unknown, CreateCouponInput>;
 type ValidateCouponRequest = Request<Record<string, never>, unknown, ValidateCouponInput>;
+type ValidateCartCouponRequest = Request<Record<string, never>, unknown, ValidateCartCouponInput>;
 type ApplyCouponRequest = Request<Record<string, never>, unknown, ApplyCouponInput>;
 type ListRequest = Request<Record<string, string>, unknown, unknown, ListCouponsQuery>;
 type GetRequest = Request<CouponIdParams>;
@@ -80,6 +73,17 @@ const validateCoupon: RequestHandler = async (request, response, next) => {
   }
 };
 
+const validateCouponForCart: RequestHandler = async (request, response, next) => {
+  try {
+    const result = await couponService.validateCouponForCart(
+      (request as ValidateCartCouponRequest).body,
+    );
+    sendSuccessResponse(response, 200, result, "Coupon validated successfully");
+  } catch (error) {
+    next(error);
+  }
+};
+
 const applyCoupon: RequestHandler = async (request, response, next) => {
   try {
     const authenticatedRequest = request as AuthenticatedRequest & ApplyCouponRequest;
@@ -100,5 +104,6 @@ export const couponController = {
   update,
   remove,
   validateCoupon,
+  validateCouponForCart,
   applyCoupon,
 };

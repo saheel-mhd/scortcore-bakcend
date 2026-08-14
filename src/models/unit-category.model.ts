@@ -1,5 +1,4 @@
 import type { Prisma } from "@prisma/client";
-
 import { prisma } from "../config/prisma.js";
 
 const publicUnitCategorySelect = {
@@ -11,9 +10,7 @@ const publicUnitCategorySelect = {
   updatedAt: true,
 } satisfies Prisma.UnitCategorySelect;
 
-export type UnitCategoryRecord = Prisma.UnitCategoryGetPayload<{
-  select: typeof publicUnitCategorySelect;
-}>;
+export type UnitCategoryRecord = Prisma.UnitCategoryGetPayload<{ select: typeof publicUnitCategorySelect; }>;
 
 export interface CreateUnitCategoryRecordData {
   name: string;
@@ -112,7 +109,23 @@ const list = async (options: ListUnitCategoriesOptions) => {
   return { items, total };
 };
 
+const countDependentVariants = async (categoryId: string): Promise<number> => {
+  const units = await prisma.unit.findMany({
+    where: { categoryId },
+    select: { id: true },
+  });
+
+  if (units.length === 0) {
+    return 0;
+  }
+
+  return prisma.productVariant.count({
+    where: { unitId: { in: units.map((unit) => unit.id) } },
+  });
+};
+
 export const unitCategoryModel = {
+  countDependentVariants,
   findById,
   findByName,
   findByShortName,

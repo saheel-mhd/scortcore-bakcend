@@ -1,13 +1,9 @@
 import { CouponType, OrderStatus, type Role } from "@prisma/client";
-
 import { couponModel } from "../models/coupon.model.js";
 import { orderModel } from "../models/order.model.js";
 import { AppError } from "../utils/app-error.js";
-import type {
-  ApplyCouponInput,
-  CreateCouponInput,
-  ValidateCouponInput,
-} from "../validations/coupon.validation.js";
+import { priceCartItems } from "./cart-pricing.service.js";
+import type { ApplyCouponInput, CreateCouponInput, ValidateCartCouponInput, ValidateCouponInput, } from "../validations/coupon.validation.js";
 
 interface CouponValidationResult {
   couponId: string;
@@ -30,7 +26,6 @@ const ensureOrderAccess = (
   if (authenticatedUser.role === "admin") {
     return;
   }
-
   if (customerId !== authenticatedUser.id) {
     throw new AppError("You are not authorized to access this order", 403);
   }
@@ -50,10 +45,64 @@ const calculateDiscount = (
   if (typeof coupon.maxDiscountAmount === "number") {
     discountAmount = Math.min(discountAmount, coupon.maxDiscountAmount);
   }
-
   discountAmount = Math.min(discountAmount, subtotalAmount);
-
   return Number(discountAmount.toFixed(2));
+};
+
+const loadUsableCoupon = async (code: string) => {
+  const normalizedCode = normalizeCouponCode(code);
+  const coupon = await couponModel.findCouponByCode(normalizedCode);
+
+  if (!coupon) {
+    throw new AppError("Coupon not found", 404);
+  }
+  if (!coupon.isActive) {
+    throw new AppError("Coupon is inactive", 400);
+  }
+  if (coupon.expiresAt && coupon.expiresAt.getTime() < Date.now()) {
+    throw new AppError("Coupon has expired", 400);
+  }
+  if (typeof coupon.usageLimit === "number" && coupon.usedCount >= coupon.usageLimit) {
+    throw new AppError("Coupon usage limit has been reached", 400);
+  }
+  return coupon;
+};
+
+type UsableCoupon = Awaited<ReturnType<typeof loadUsableCoupon>>;
+
+const priceWithCoupon = (
+  coupon: UsableCoupon,
+  subtotalAmount: number,
+): CouponValidationResult => {
+  if (typeof coupon.minOrderAmount === "number" && subtotalAmount < coupon.minOrderAmount) {
+    throw new AppError("Order does not meet the minimum amount required for this coupon", 400);
+  }
+
+  const discountAmount = calculateDiscount(subtotalAmount, coupon);
+
+  return {
+    couponId: coupon.id,
+    code: coupon.code,
+    type: coupon.type,
+    subtotalAmount,
+    discountAmount,
+    totalAmount: Number((subtotalAmount - discountAmount).toFixed(2)),
+    isValid: true,
+  };
+};
+
+const resolveCouponDiscount = async (
+  code: string,
+  subtotalAmount: number,
+): Promise<CouponValidationResult> => {
+  return priceWithCoupon(await loadUsableCoupon(code), subtotalAmount);
+};
+
+const validateCouponForCart = async (
+  input: ValidateCartCouponInput,
+): Promise<CouponValidationResult> => {
+  const { subtotalAmount } = await priceCartItems(input.items);
+  return resolveCouponDiscount(input.code, subtotalAmount);
 };
 
 const validateCouponAgainstOrder = async (
@@ -61,24 +110,7 @@ const validateCouponAgainstOrder = async (
   orderId: string,
   authenticatedUser: { id: string; role: Role },
 ): Promise<CouponValidationResult> => {
-  const normalizedCode = normalizeCouponCode(code);
-  const coupon = await couponModel.findCouponByCode(normalizedCode);
-
-  if (!coupon) {
-    throw new AppError("Coupon not found", 404);
-  }
-
-  if (!coupon.isActive) {
-    throw new AppError("Coupon is inactive", 400);
-  }
-
-  if (coupon.expiresAt && coupon.expiresAt.getTime() < Date.now()) {
-    throw new AppError("Coupon has expired", 400);
-  }
-
-  if (typeof coupon.usageLimit === "number" && coupon.usedCount >= coupon.usageLimit) {
-    throw new AppError("Coupon usage limit has been reached", 400);
-  }
+  const coupon = await loadUsableCoupon(code);
 
   const order = await orderModel.findOrderById(orderId);
 
@@ -91,29 +123,10 @@ const validateCouponAgainstOrder = async (
   if (order.status !== OrderStatus.pending) {
     throw new AppError("Coupons can only be applied to pending orders", 400);
   }
-
   if (order.payment && order.payment.status === "paid") {
     throw new AppError("Coupons cannot be applied to paid orders", 400);
   }
-
-  const subtotalAmount = order.subtotalAmount;
-
-  if (typeof coupon.minOrderAmount === "number" && subtotalAmount < coupon.minOrderAmount) {
-    throw new AppError("Order does not meet the minimum amount required for this coupon", 400);
-  }
-
-  const discountAmount = calculateDiscount(subtotalAmount, coupon);
-  const totalAmount = Number((subtotalAmount - discountAmount).toFixed(2));
-
-  return {
-    couponId: coupon.id,
-    code: coupon.code,
-    type: coupon.type,
-    subtotalAmount,
-    discountAmount,
-    totalAmount,
-    isValid: true,
-  };
+  return priceWithCoupon(coupon, order.subtotalAmount);
 };
 
 const createCoupon = async (input: CreateCouponInput) => {
@@ -123,7 +136,6 @@ const createCoupon = async (input: CreateCouponInput) => {
   if (existingCoupon) {
     throw new AppError("Coupon with this code already exists", 409);
   }
-
   return couponModel.createCoupon({
     code: normalizedCode,
     description: input.description,
@@ -248,6 +260,8 @@ const deleteCoupon = async (id: string) => {
 export const couponService = {
   createCoupon,
   validateCoupon,
+  validateCouponForCart,
+  resolveCouponDiscount,
   applyCoupon,
   list,
   getById,

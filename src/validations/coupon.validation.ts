@@ -55,6 +55,18 @@ export const applyCouponValidationSchema = z.object({
   body: couponActionBodySchema,
 });
 
+const cartItemSchema = z.object({
+  productVariantId: objectIdSchema,
+  quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
+});
+
+export const validateCartCouponValidationSchema = z.object({
+  body: z.object({
+    code: couponCodeSchema,
+    items: z.array(cartItemSchema).min(1, "At least one cart item is required"),
+  }),
+});
+
 export const listCouponsValidationSchema = z.object({
   query: z.object({
     page: z.coerce.number().int().min(1).default(1),
@@ -102,6 +114,7 @@ export const deleteCouponValidationSchema = z.object({
 export type CreateCouponInput = z.infer<typeof createCouponValidationSchema>["body"];
 export type ValidateCouponInput = z.infer<typeof validateCouponValidationSchema>["body"];
 export type ApplyCouponInput = z.infer<typeof applyCouponValidationSchema>["body"];
+export type ValidateCartCouponInput = z.infer<typeof validateCartCouponValidationSchema>["body"];
 export type ListCouponsQuery = z.infer<typeof listCouponsValidationSchema>["query"];
 export type UpdateCouponInput = z.infer<typeof updateCouponValidationSchema>["body"];
 export type CouponIdParams = z.infer<typeof getCouponValidationSchema>["params"];

@@ -1,5 +1,4 @@
 import type { Prisma } from "@prisma/client";
-
 import { prisma } from "../config/prisma.js";
 
 const publicUnitSelect = {
@@ -19,9 +18,7 @@ const publicUnitSelect = {
   updatedAt: true,
 } satisfies Prisma.UnitSelect;
 
-export type UnitRecord = Prisma.UnitGetPayload<{
-  select: typeof publicUnitSelect;
-}>;
+export type UnitRecord = Prisma.UnitGetPayload<{ select: typeof publicUnitSelect; }>;
 
 export interface CreateUnitRecordData {
   name: string;
@@ -130,7 +127,12 @@ const list = async (options: ListUnitsOptions) => {
   return { items, total };
 };
 
+const countDependentVariants = async (unitId: string): Promise<number> => {
+  return prisma.productVariant.count({ where: { unitId } });
+};
+
 export const unitModel = {
+  countDependentVariants,
   findById,
   findByCategoryAndShortName,
   create,

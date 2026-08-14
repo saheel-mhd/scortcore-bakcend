@@ -1,10 +1,4 @@
-import type {
-  InventoryMovementType,
-  OrderStatus,
-  Prisma,
-  User,
-} from "@prisma/client";
-
+import type { InventoryMovementType, OrderStatus, Prisma, User, } from "@prisma/client";
 import { prisma } from "../config/prisma.js";
 
 const orderCustomerSelect = {
@@ -38,28 +32,26 @@ const publicOrderSelect = {
     select: orderCustomerSelect,
   },
   couponId: true,
-  coupon: {
-    select: orderCouponSelect,
-  },
+  coupon: { select: orderCouponSelect, },
   items: true,
+  addressId: true,
+  shippingAddress: true,
   subtotalAmount: true,
   discountAmount: true,
   totalAmount: true,
   status: true,
-  payment: {
-    select: orderPaymentSelect,
-  },
+  payment: { select: orderPaymentSelect, },
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.OrderSelect;
 
-export type OrderRecord = Prisma.OrderGetPayload<{
-  select: typeof publicOrderSelect;
-}>;
+export type OrderRecord = Prisma.OrderGetPayload<{ select: typeof publicOrderSelect; }>;
 
 export interface CreateOrderRecordData {
   orderNumber: string;
   customerId: string;
+  addressId: string;
+  shippingAddress: Prisma.InputJsonValue;
   items: Prisma.InputJsonValue;
   subtotalAmount: number;
   discountAmount: number;
@@ -92,17 +84,14 @@ const buildOrderWhereInput = (
       status: options.status,
     });
   }
-
   if (options.customerId) {
     andConditions.push({
       customerId: options.customerId,
     });
   }
-
   if (andConditions.length === 0) {
     return {};
   }
-
   return {
     AND: andConditions,
   };
@@ -235,6 +224,24 @@ const createOrderWithStockUpdate = async (
       ),
     );
 
+    if (data.couponId) {
+      const coupon = await transaction.coupon.findUnique({
+        where: { id: data.couponId },
+        select: { usageLimit: true, usedCount: true },
+      });
+      if (!coupon) {
+        throw new Error("Coupon not found");
+      }
+      if (typeof coupon.usageLimit === "number" && coupon.usedCount >= coupon.usageLimit) {
+        throw new Error("Coupon usage limit has been reached");
+      }
+
+      await transaction.coupon.update({
+        where: { id: data.couponId },
+        data: { usedCount: { increment: 1 } },
+      });
+    }
+
     const createdOrder = await transaction.order.create({
       data,
       select: publicOrderSelect,
@@ -267,6 +274,93 @@ const createOrderWithStockUpdate = async (
   });
 };
 
+const cancelOrderWithStockRestore = async (
+  id: string,
+  cancellableFrom: OrderStatus[],
+  reason?: string,
+): Promise<OrderRecord> => {
+  return prisma.$transaction(async (transaction) => {
+    const order = await transaction.order.findUnique({
+      where: { id },
+      select: { id: true, orderNumber: true, status: true, couponId: true, items: true },
+    });
+
+    if (!order) {
+      throw new Error("Order not found");
+    }
+
+    if (!cancellableFrom.includes(order.status)) {
+      throw new Error(`An order with status ${order.status} cannot be cancelled`);
+    }
+
+    const items = Array.isArray(order.items)
+      ? (order.items as unknown as OrderItemStockInput[])
+      : [];
+
+    for (const item of items) {
+      if (!item.productVariantId) {
+        continue;
+      }
+
+      const variant = await transaction.productVariant.findUnique({
+        where: { id: item.productVariantId },
+        select: { id: true, stock: true },
+      });
+
+      if (!variant) {
+        continue;
+      }
+
+      const nextStock = variant.stock + item.quantity;
+
+      await transaction.productVariant.update({
+        where: { id: variant.id },
+        data: { stock: nextStock },
+      });
+
+      await transaction.inventoryMovement.create({
+        data: {
+          productVariantId: variant.id,
+          type: "increase" satisfies InventoryMovementType,
+          quantityChange: item.quantity,
+          previousStock: variant.stock,
+          nextStock,
+          reason: reason ?? `Stock restored for cancelled order ${order.orderNumber}`,
+          referenceType: "order_cancellation",
+          referenceId: order.id,
+        },
+      });
+    }
+
+    if (order.couponId) {
+      await transaction.coupon.update({
+        where: { id: order.couponId },
+        data: { usedCount: { decrement: 1 } },
+      });
+    }
+
+    const payment = await transaction.payment.findUnique({
+      where: { orderId: id },
+      select: { id: true, status: true },
+    });
+
+    if (payment && payment.status !== "refunded" && payment.status !== "failed") {
+      await transaction.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: payment.status === "paid" ? "refunded" : "failed",
+        },
+      });
+    }
+
+    return transaction.order.update({
+      where: { id },
+      data: { status: "cancelled" },
+      select: publicOrderSelect,
+    });
+  });
+};
+
 export const orderModel = {
   findUserById,
   findOrderById,
@@ -275,4 +369,5 @@ export const orderModel = {
   updateOrderPricing,
   deleteOrder,
   createOrderWithStockUpdate,
+  cancelOrderWithStockRestore,
 };

@@ -1,18 +1,9 @@
 import { Router } from "express";
-
-import { Role } from "@prisma/client";
 import { couponController } from "../controllers/coupon.controller.js";
 import { authenticate, authorize } from "../middlewares/auth.middleware.js";
+import { requirePermission } from "../middlewares/permission.middleware.js";
 import { validateRequest } from "../middlewares/validate.middleware.js";
-import {
-  applyCouponValidationSchema,
-  createCouponValidationSchema,
-  deleteCouponValidationSchema,
-  getCouponValidationSchema,
-  listCouponsValidationSchema,
-  updateCouponValidationSchema,
-  validateCouponValidationSchema,
-} from "../validations/coupon.validation.js";
+import { applyCouponValidationSchema, createCouponValidationSchema, deleteCouponValidationSchema, getCouponValidationSchema, listCouponsValidationSchema, updateCouponValidationSchema, validateCartCouponValidationSchema, validateCouponValidationSchema, } from "../validations/coupon.validation.js";
 
 const couponRouter = Router();
 
@@ -23,14 +14,18 @@ couponRouter.post(
   couponController.validateCoupon,
 );
 couponRouter.post(
+  "/validate-cart",
+  authenticate,
+  validateRequest(validateCartCouponValidationSchema),
+  couponController.validateCouponForCart,
+);
+couponRouter.post(
   "/apply",
   authenticate,
   validateRequest(applyCouponValidationSchema),
   couponController.applyCoupon,
 );
-
-couponRouter.use(authenticate, authorize(Role.admin, Role.staff));
-
+couponRouter.use(authenticate, requirePermission("coupons"));
 couponRouter.get(
   "/",
   validateRequest(listCouponsValidationSchema),

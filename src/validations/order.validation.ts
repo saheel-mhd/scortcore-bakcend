@@ -1,5 +1,4 @@
 import { z } from "zod";
-
 import { OrderStatus } from "@prisma/client";
 
 const objectIdSchema = z
@@ -14,6 +13,17 @@ const orderItemSchema = z.object({
 export const createOrderValidationSchema = z.object({
   body: z.object({
     customerId: objectIdSchema.optional(),
+    addressId: objectIdSchema,
+    couponCode: z
+      .string()
+      .trim()
+      .min(3, "Coupon code must be at least 3 characters long")
+      .max(40, "Coupon code must not exceed 40 characters")
+      .regex(
+        /^[A-Za-z0-9_-]+$/,
+        "Coupon code must use letters, numbers, underscores, or hyphens only",
+      )
+      .optional(),
     items: z.array(orderItemSchema).min(1, "At least one order item is required"),
   }),
 });
@@ -58,8 +68,20 @@ export const deleteOrderValidationSchema = z.object({
   }),
 });
 
+export const cancelOrderValidationSchema = z.object({
+  params: z.object({
+    id: objectIdSchema,
+  }),
+  body: z
+    .object({
+      reason: z.string().trim().min(1).max(300).optional(),
+    })
+    .default({}),
+});
+
 export type CreateOrderInput = z.infer<typeof createOrderValidationSchema>["body"];
 export type ListOrdersQuery = z.infer<typeof listOrdersValidationSchema>["query"];
 export type ListUserOrdersQuery = z.infer<typeof listUserOrdersValidationSchema>["query"];
 export type OrderIdParams = z.infer<typeof getOrderValidationSchema>["params"];
 export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusValidationSchema>["body"];
+export type CancelOrderInput = z.infer<typeof cancelOrderValidationSchema>["body"];

@@ -19,6 +19,7 @@ enum OrderStatus {
   paid
   shipped
   delivered
+  cancelled
 }
 
 enum PaymentStatus {
@@ -140,6 +141,8 @@ model Order {
   couponId    String?     @db.ObjectId
   coupon      Coupon?     @relation(fields: [couponId], references: [id])
   items       Json
+  addressId       String? @db.ObjectId
+  shippingAddress Json?
   subtotalAmount Float
   discountAmount Float    @default(0)
   totalAmount Float

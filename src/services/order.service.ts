@@ -1,30 +1,23 @@
 import type { Prisma, Role } from "@prisma/client";
 import { OrderStatus } from "@prisma/client";
-
-import { prisma } from "../config/prisma.js";
+import { addressModel } from "../models/address.model.js";
 import { orderModel } from "../models/order.model.js";
 import { AppError } from "../utils/app-error.js";
-import type {
-  CreateOrderInput,
-  ListOrdersQuery,
-  ListUserOrdersQuery,
-  UpdateOrderStatusInput,
-} from "../validations/order.validation.js";
+import { priceCartItems } from "./cart-pricing.service.js";
+import { couponService } from "./coupon.service.js";
+import type { CancelOrderInput, CreateOrderInput, ListOrdersQuery, ListUserOrdersQuery, UpdateOrderStatusInput, } from "../validations/order.validation.js";
 
-interface OrderItemSnapshot {
-  productVariantId: string;
-  productId: string;
-  name: string;
-  slug: string;
-  sku: string;
-  unitId: string;
-  unitName: string;
-  unitShortName: string;
-  unitCategoryId: string;
-  unitCategoryName: string;
-  quantity: number;
-  unitPrice: number;
-  lineTotal: number;
+interface ShippingAddressSnapshot {
+  addressId: string;
+  label: string | null;
+  fullName: string;
+  phone: string | null;
+  line1: string;
+  line2: string | null;
+  city: string;
+  state: string | null;
+  postalCode: string;
+  country: string;
 }
 
 interface ListOrdersResult {
@@ -38,11 +31,15 @@ interface ListOrdersResult {
 }
 
 const orderStatusTransitions: Record<OrderStatus, OrderStatus[]> = {
-  pending: [OrderStatus.paid],
-  paid: [OrderStatus.shipped],
+  pending: [OrderStatus.paid, OrderStatus.cancelled],
+  paid: [OrderStatus.shipped, OrderStatus.cancelled],
   shipped: [OrderStatus.delivered],
   delivered: [],
+  cancelled: [],
 };
+
+const customerCancellableStatuses: OrderStatus[] = [OrderStatus.pending];
+const adminCancellableStatuses: OrderStatus[] = [OrderStatus.pending, OrderStatus.paid];
 
 const generateOrderNumber = (): string => {
   const timestamp = Date.now().toString(36).toUpperCase();
@@ -68,83 +65,43 @@ const createOrder = async (
     throw new AppError("Orders can only be linked to customer accounts", 400);
   }
 
-  const aggregatedItems = Array.from(
-    input.items.reduce((map, item) => {
-      const currentQuantity = map.get(item.productVariantId) ?? 0;
-      map.set(item.productVariantId, currentQuantity + item.quantity);
-      return map;
-    }, new Map<string, number>()),
-  ).map(([productVariantId, quantity]) => ({
-    productVariantId,
-    quantity,
-  }));
+  const address = await addressModel.findById(input.addressId);
 
-  const variantIds = aggregatedItems.map((item) => item.productVariantId);
-  const variants = await prisma.productVariant.findMany({
-    where: { id: { in: variantIds } },
-    include: {
-      product: true,
-      unit: { include: { category: true } },
-    },
-  });
-
-  if (variants.length !== variantIds.length) {
-    throw new AppError("One or more product variants were not found", 404);
+  if (!address || address.customerId !== customerId) {
+    throw new AppError("Delivery address not found", 404);
   }
 
-  const variantMap = new Map(variants.map((variant) => [variant.id, variant]));
+  const shippingAddress: ShippingAddressSnapshot = {
+    addressId: address.id,
+    label: address.label,
+    fullName: address.fullName,
+    phone: address.phone,
+    line1: address.line1,
+    line2: address.line2,
+    city: address.city,
+    state: address.state,
+    postalCode: address.postalCode,
+    country: address.country,
+  };
 
-  const orderItems: OrderItemSnapshot[] = aggregatedItems.map((item) => {
-    const variant = variantMap.get(item.productVariantId);
+  const { aggregatedItems, orderItems, subtotalAmount } = await priceCartItems(input.items);
 
-    if (!variant) {
-      throw new AppError("One or more product variants were not found", 404);
-    }
-
-    if (!variant.product.isActive) {
-      throw new AppError(
-        `Product ${variant.product.name} is inactive and cannot be ordered`,
-        400,
-      );
-    }
-
-    if (variant.stock < item.quantity) {
-      throw new AppError(
-        `Insufficient stock for ${variant.product.name} (${variant.unit.shortName})`,
-        400,
-      );
-    }
-
-    return {
-      productVariantId: variant.id,
-      productId: variant.product.id,
-      name: variant.product.name,
-      slug: variant.product.slug,
-      sku: variant.product.sku,
-      unitId: variant.unit.id,
-      unitName: variant.unit.name,
-      unitShortName: variant.unit.shortName,
-      unitCategoryId: variant.unit.category.id,
-      unitCategoryName: variant.unit.category.name,
-      quantity: item.quantity,
-      unitPrice: variant.product.price,
-      lineTotal: Number((variant.product.price * item.quantity).toFixed(2)),
-    };
-  });
-
-  const totalAmount = Number(
-    orderItems.reduce((total, item) => total + item.lineTotal, 0).toFixed(2),
-  );
+  const couponResult = input.couponCode
+    ? await couponService.resolveCouponDiscount(input.couponCode, subtotalAmount)
+    : null;
 
   try {
     return await orderModel.createOrderWithStockUpdate(
       {
         orderNumber: generateOrderNumber(),
         customerId,
+        addressId: address.id,
+        shippingAddress: shippingAddress as unknown as Prisma.InputJsonValue,
         items: orderItems as unknown as Prisma.InputJsonValue,
-        subtotalAmount: totalAmount,
-        discountAmount: 0,
-        totalAmount,
+        subtotalAmount,
+        discountAmount: couponResult?.discountAmount ?? 0,
+        totalAmount: couponResult?.totalAmount ?? subtotalAmount,
+        ...(couponResult ? { couponId: couponResult.couponId } : {}),
         status: OrderStatus.pending,
       },
       aggregatedItems,
@@ -263,6 +220,47 @@ const deleteOrder = async (id: string) => {
   return orderModel.deleteOrder(id);
 };
 
+const cancelOrder = async (
+  id: string,
+  input: CancelOrderInput,
+  authenticatedUser: { id: string; role: Role },
+) => {
+  const order = await orderModel.findOrderById(id);
+
+  if (!order) {
+    throw new AppError("Order not found", 404);
+  }
+
+  const isPrivilegedUser = authenticatedUser.role === "admin";
+
+  if (!isPrivilegedUser && order.customerId !== authenticatedUser.id) {
+    throw new AppError("You are not authorized to access this order", 403);
+  }
+
+  const cancellableFrom = isPrivilegedUser
+    ? adminCancellableStatuses
+    : customerCancellableStatuses;
+
+  if (!cancellableFrom.includes(order.status)) {
+    throw new AppError(
+      order.status === OrderStatus.cancelled
+        ? "This order is already cancelled"
+        : `An order with status ${order.status} can no longer be cancelled`,
+      400,
+    );
+  }
+
+  try {
+    return await orderModel.cancelOrderWithStockRestore(id, cancellableFrom, input.reason);
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new AppError(error.message, 400);
+    }
+
+    throw error;
+  }
+};
+
 export const orderService = {
   createOrder,
   getOrderById,
@@ -270,4 +268,5 @@ export const orderService = {
   listOrders,
   updateOrderStatus,
   deleteOrder,
+  cancelOrder,
 };
